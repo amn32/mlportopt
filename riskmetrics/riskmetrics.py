@@ -6,13 +6,47 @@ from mlportopt.mixturemodels import *
 
 class RiskMetrics:
     
+    '''Calculate common and custom risk metrics for individual exemplars
+    
+    Methods
+    -------
+    
+    fit(data, freq = 'D', alpha = 0.05, bmark = None, mm = None)
+        Call all risk metrics and compile
+    VaR(percentile = 95)
+        Compute the Value at Risk under various distributional assumptions
+    CVaR(percentile = 95)
+        Compute the Conditional Value at Risk
+    ann_vol()
+        Compute the annulaised volatility
+    sharpe()
+        Compute the Sharpe Ratio
+    prob_sharpe()
+        Compute the Probabilistic Sharpe Ratio as per Marcos Lopez de Prado
+    '''
+    
     def __init__(self):
         
         self.annual = {'D':261, 'W':52, 'M': 12}
         
     def fit(self, data, freq = 'D', alpha = 0.05, bmark = None, mm = None):
         
+        '''
+        Parameters
+        ----------
+        data: ndarray
+        freq: 'str'
+            Frequency of data [Options: 'D','W','M'] (Default is 'D')
+        alpha: float
+            Alpha level for confidence intervals
+        bmark: ndarray
+            Benchmark data for the same time period. Used for testing significance of prob_sharpe
+        mm: str
+            Choice of mixture model to fit to the data [Options: 'Gauss', 'Gamma', None] (Default is None)
+        '''
+        
         self.data  = data.T
+        self.n     = self.data.shape[0]
         self.freq  = self.annual[freq]
         self.alpha = alpha
         self.mm    = mm
@@ -52,6 +86,13 @@ class RiskMetrics:
     
     def VaR(self, percentile = 95):
         
+        '''
+        Parameters
+        ----------
+        percentile: int
+            Percentile for calculations (Default is 95th)
+        '''
+        
         gmm     = None
         
         norm    = stats.norm.ppf(1 - percentile/100, loc = self.data.mean(), scale = self.data.std())
@@ -67,6 +108,13 @@ class RiskMetrics:
         return self.VaR_dict
     
     def CVaR(self, percentile = 95):
+        
+        '''
+        Parameters
+        ----------
+        percentile: int
+            Percentile for calculations (Default is 95th)
+        '''
         
         cgmm     = None
         
@@ -101,7 +149,6 @@ class RiskMetrics:
     
     def sharpe(self):
         
-        self.n              = self.data.shape[0]
         self.skew           = stats.skew(self.data)
         self.kurtosis       = stats.kurtosis(self.data, fisher = False)
         
@@ -125,6 +172,23 @@ class RiskMetrics:
     
     def __call__(self, metric = 'prob_sharpe'):
         
+        '''
+        Options
+        -------
+        - prob_sharpe
+        - ann_sharpe
+        - sharpe
+        - var
+        - vol (std)
+        - ann_vol
+        - VaR - normal  (VaR under normality assumption)
+        - VaR - student (VaR under student t assumption)
+        - VaR - gmm     (VaR from fitted GMM samples)
+        - CVaR - normal  (CVaR under normality assumption)
+        - CVaR - student (CVaR under student t assumption)
+        - CVaR - gmm     (CVaR from fitted GMM samples)
+        '''
+        
         if metric == 'prob_sharpe':
         
             return self.prob_sharpe, self.req_samples
@@ -141,7 +205,7 @@ class RiskMetrics:
             
             return self.data.var()
         
-        elif metric == 'std':
+        elif metric == 'vol':
             
             return self.data.std()
         

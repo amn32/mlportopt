@@ -585,7 +585,31 @@ class GPcluster:
 #############################################################################################################################################
 class support:
     
+    '''
+    Helper function for the DPGMM Class
+    
+    Methods
+    -------
+    
+    calc_entropy(X)
+        Vectorised log_entropy
+    cholesky_decomp(A)
+        Compute the cholesky decompositon of matrix A
+    tensor_inv()
+        Compute the inverse of a 3d tensor with 2d Cholesky decompositon
+    log_det()
+        Compute the log determinant of a 3d tensor
+    lgamma()
+        Compute the sum of the log of the gamma functions per Wishart dist.
+    '''
+    
     def calc_entropy(self, X):
+        
+        '''
+        Parameters
+        ----------
+        X: ndarray
+        '''
         
         log_params  = X.copy() - X.max(axis = 1)[:,None]
         params      = np.exp(log_params)
@@ -597,6 +621,12 @@ class support:
     
     def cholesky_decomp(self, A):
         
+        '''
+        Parameters
+        ----------
+        A: ndarray
+        '''
+        
         chols  = [np.linalg.cholesky(A[:,:,i]) for i in range(A.shape[2])]
         
         chinvs = [np.linalg.inv(C) for C in chols]
@@ -605,24 +635,52 @@ class support:
     
     def tensor_inv(self, A):
         
+        '''
+        Parameters
+        ----------
+        A: ndarray
+        '''
+        
         chinvs = self.cholesky_decomp(A)[1]
         
         return np.dstack([C_inv.T @ C_inv for C_inv in chinvs])
     
     def log_det(self, A):
+        
+        '''
+        Parameters
+        ----------
+        A: ndarray
+        '''
 
         chols = self.cholesky_decomp(A)[0]
         
         return np.array([np.log(C.diagonal().prod()) for C in chols])
     
-    def lngammad(self, v,D):
-        """sum of log gamma functions, as appears in a Wishart Distribution"""
+    def lgamma(self, v, D):
+        
         return np.sum([gammaln((v+1.-d)/2.) for d in range(1,D+1)],0)
     
 
 class DPGMM(support):
     
-    '''Fit a Dirichlet Process Gaussian Mixture Model'''
+    '''
+    Fit a Gaussian Mixture Model with a Dirichlet Process prior on the number of mixture components
+    
+    Methods
+    -------
+    
+    calc_entropy(X)
+        Vectorised log_entropy
+    cholesky_decomp(A)
+        Compute the cholesky decompositon of matrix A
+    tensor_inv()
+        Compute the inverse of a 3d tensor with 2d Cholesky decompositon
+    log_det()
+        Compute the log determinant of a 3d tensor
+    lgamma()
+        Compute the sum of the log of the gamma functions per Wishart dist.
+    '''
     
     def __init__(self, X, clusters, 
                  iters = 500, 
@@ -632,8 +690,34 @@ class DPGMM(support):
                  gtol  = 1e-6,  
                  kap   = 1e-6, 
                  var_p = 1e-3, 
-                 conc  = 0,
+                 conc  = 10,
                  verb  = False):
+        
+        '''
+        Parameters
+        ----------
+        X: ndarray
+        clusters: int
+            Initial number of clusters - updated by the DP prior
+        iters: int
+            Number of iterations in gradient descent (Default is 500)
+        step: float
+            Step size (Default is 1)
+        alpha: float
+            Initial value for alpha (Default is 1)
+        ftol: float
+            Tolerance for function value convergence (Default is 1e-6)
+        gtol: float
+            Tolerance for gradient value convergence (Default is 1e-6)
+        kap: float
+            Initial value for kappa (Default is 1e-6)
+        var_p: float
+            Initial value for the variance (Default is 1e-3)
+        conc: float
+            Intiial value for the concentration parameter (Default is 10)
+        verb: Bool
+            Boolean indicator for explantory prints (Default is False)
+        '''
         
         ### Initialisation for the VBEM optimiser
         
@@ -673,6 +757,10 @@ class DPGMM(support):
         self.reparameterise(np.random.randn(self.N, self.n_clusts))
     
     def reparameterise(self,params):
+        
+        '''
+        Get the updated parameter values
+        '''
 
         self.params0  = params.reshape(self.N, self.n_clusts)
         entropy_vars  = self.calc_entropy(self.params0)
@@ -700,11 +788,15 @@ class DPGMM(support):
         
     def ELBO(self):
         
+        '''
+        Compute the evidence lower bound
+        '''
+        
         cluster      = -0.5*self.features*np.sum(np.log(self.kaps/self.kap_scalar))
         
         dirichlet1   = self.n_clusts*self.concentration*self.ldet - np.sum(self.concs*self.clust_ldet)
         
-        dirichlet2   = np.sum(self.lngammad(self.concs, self.n_clusts))- self.n_clusts*self.lngammad(self.concentration, self.n_clusts)
+        dirichlet2   = np.sum(self.lgamma(self.concs, self.n_clusts))- self.n_clusts*self.lgamma(self.concentration, self.n_clusts)
         
         mixing_ELBO1 = gammaln((np.ones(self.n_clusts)*self.alpha).sum())-np.sum(gammaln((np.ones(self.n_clusts)*self.alpha)))
         
@@ -760,7 +852,18 @@ class DPGMM(support):
         
         return
             
-    def split_cluster(self, clust_num, threshold=0.9, maxiter=100):
+    def split_cluster(self, clust_num, threshold=0.9):
+        
+        '''
+        Compare splits and make the split if it leads to an improvment in the ELBO
+        
+        Parameters
+        ----------
+        clust_num: int
+            Cluster index
+        threshold: float
+            Threshold on probability of assignment (Default is 0.9)
+        '''
 
         check1 = clust_num > (self.n_clusts-1) # in range
         check2 = self.params_cluster[clust_num] < 1 # data to split
@@ -789,6 +892,8 @@ class DPGMM(support):
         
     def split_all(self, iters = 10):
         
+        '''Compare all possible cluster splits'''
+        
         for _ in range(iters):
         
             for i in range(self.n_clusts):
@@ -796,6 +901,10 @@ class DPGMM(support):
                 self.split_cluster(i)
 
     def predict(self, X):
+        
+        '''
+        Predict cluster assignment of new data
+        '''
         
         diff  = X[:,:,None]-self.clustmean[None,:,:]
         ein1  = np.einsum('abd, bcd -> acd', diff, self.clustvar_inv)        
@@ -819,6 +928,18 @@ class DPGMM(support):
         return mpred, pred
 
     def plot(self, n = 100, thresh = 1e-8):
+        
+        '''
+        Plot the clusters in a 2d space over the variance contours
+        
+        Parameters
+        ----------
+        
+        n: int 
+            Range of linspace (Default is 100)
+        thresh:
+            Cutoff below which we assume outside of the variance function (Default is 1e-8)
+        '''
         
         check_dims = self.X.shape[1] == 2
         

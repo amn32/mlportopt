@@ -9,12 +9,13 @@ from mlportopt.riskmetrics import *
 from mlportopt.dependence  import *
 from mlportopt.hiercluster import *
 
-def quasidiagonalise(link): # Quasi diagonalisation as per Lopez de Prado
+def quasidiagonalise(link): 
+    
+    '''Quasi diagonalisation of linkage matrix as per Lopez de Prado'''
 
-    try:
-        link           = link.astype(int)
-    except:
-        pass
+    try: link = link.astype(int)
+    except: pass
+    
     sorted_index   = pd.Series([link[-1,0],link[-1,1]])
     num_items      = link[-1,3]                         
 
@@ -59,9 +60,9 @@ class Allocate:
         if 'gmm' in inter_cluster_metric: inter_gmm = 'Gauss'
         
         ### Calculate the intra cluster weightings
-        
-        sub_data  = self.data[index]
 
+        sub_data  = self.data[index,:]
+        
         intra     = np.empty(sub_data.shape[0])
         
         for i in range(intra.shape[0]):
@@ -81,7 +82,7 @@ class Allocate:
         inter_rm.fit(weighted_data, freq = self.frequency, mm = inter_gmm)
         
         cluster_metric = inter_rm(inter_cluster_metric)
-        
+
         return cluster_metric
     
     def recursively_partition(self, inter_cluster_metric = 'var', intra_cluster_metric = 'var'): # Recursively partition as per Lopez de Prado

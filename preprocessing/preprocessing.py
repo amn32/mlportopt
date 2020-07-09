@@ -24,6 +24,26 @@ from ipypb                  import ipb as tqdm
 
 class PCA:
     
+    '''
+    Principal Component Analysis
+    
+    Methods
+    -------
+    
+    fit(n)
+        Fits the PCA
+    reverse(evecs)
+        Reverses the decomposition back to the original space
+    calc_eigens
+        Calculate the eigenvectors and eigenvalues
+    get_nevecs
+        Get the first n eigenvectors sorted by eigenvalue
+    get_decomp
+        Return the eigenvectors and eigenvalues
+    recon_error
+        Calculate the MSE of the reconstructed data
+    '''
+    
     def __init__(self, data, ismat = False):
         
         self.X   = data
@@ -80,7 +100,23 @@ class PCA:
 
 class DimAE:
     
-    '''Dimensionality Reducing Auto Encoder'''
+    '''Dimensionality Reducing Auto Encoder
+    
+    Methods
+    -------
+    
+    create_model()
+        Builds the model in tensorflow
+    compute_loss()
+        Computes the loss (MSE)
+    optimise()
+        Optimises the model with ADAM
+    train()
+        Trains the model
+    reduce(x)
+        Encodes the input data x to the latent layer through the trained Encoder
+    
+    '''
     
     def __init__(self, output_dir = './dimAE_logdir/', 
                  lr          = 0.001, 
@@ -96,6 +132,36 @@ class DimAE:
                  drop_coeff  = 0,
                  verbose     = False):
         
+        '''
+        Parameters
+        ----------
+        output_dir: str
+            Location of tf output (Default is './dimAE_logdir/')
+        lr: float
+            Learning rate of the ADAM optimiser (Default is 0.001)
+        nb_epochs:
+            Number of epochs in the training method (Default is 1)
+        batch_size: int
+            Batch size (Default is 50)
+        n: int
+            Number of training exemplars (Default is 60000)
+        num_chans: int
+            Number of input features (Default is 100)
+        activation: tf object
+            Activation function of dense layers
+        encoder: list
+            List of dense layer depths for the encoder. Additional entries will create new dense layers. The decoder will be built as a reverse of the encoder.
+        latent_dim: int
+            Number of nodes in the latent layer, equivalent to the desired size of the reduced dimension (Default is 10)
+        regularizer: str
+            Regulariser to be used in the encoder and decoder (Default is 'l2') [Options: 'l1','l2','l1l2', None]
+        reg_coeff: float
+            Size of the regularisation coefficient if regularizer is not None (Default is 0)
+        drop_coeff: float
+            Coefficient of the model dropout (Default is 0, corresponding to no dropout)
+        verbose: Bool
+            Boolean indicator of descriptive print statements
+        '''
      
         self.n             = n
         self.num_chans     = num_chans
@@ -272,6 +338,10 @@ class DimAE:
     
 def PCA_(data, n, labels = 'r', visualise = True):
     
+    '''
+    sklearn PCA, actually performs Singular Value Decomposition
+    '''
+    
     pca = sklearn_PCA(n_components = n).fit(data)
 
     components = pca.transform(data)
@@ -294,9 +364,17 @@ def PCA_(data, n, labels = 'r', visualise = True):
 
 def whiten(data):
     
+    '''
+    Simple function to demean and standardise the data
+    '''
+    
     return (data - data.mean(axis = 0))/data.std(axis = 0)
 
 def preprocess(data, white = True, reduce = True, n = 2, visualise = False):
+    
+    '''
+    Wrapper for whitening and dimensionality reduction
+    '''
     
     if reduce:
         
@@ -313,12 +391,41 @@ def preprocess(data, white = True, reduce = True, n = 2, visualise = False):
 
 class RMT:
     
-    '''Toolbox for cleaning Hermitian matrices based on Random Matrix Theory'''
+    '''Toolbox for cleaning Hermitian matrices based on Random Matrix Theory
+    
+    Methods
+    -------
+    
+    fitKDE(KDE_bwidth = 0.01, x = None)
+        Estimate the Kernel Density and return the PDF
+    MarcenkoPastur(s2, q, points = 100)
+        Evaluate the Marcenko - Pastur distribution
+    PDFdiff
+        Return the difference between the MP distribution and the Kernel Density estimated distribution
+    optimise
+        Optimise the MP parameters by minimising the PDFdiff
+    denoise_fixed
+        Denoise the matrix by fixing the random eigenvectors to constants
+    denoise_shrinkage
+        Denoise the matrix through shrinkage
+    denoise_targeted_shrinkage
+        Denoise the matrix through targeted shrinkage of the random eigenvectors
+    detone
+        Remove the first n eigenvectors (sorted by eigenvalue). Removal of the first is equivalent to beta-adjusting the returns for financial correlation matrices.
+    condition_number
+        Return the cndition number of the matrix
+    plot
+        Plot the MP and KDE distributions
+        
+        '''
     
     def __init__(self, data, ismat = False):
         
         '''
-        -ismat: Boolean indicator if data being passed is cov/corr matrix or raw data
+        Parameters
+        ----------
+        ismat: Bool
+            Boolean indicator if data being passed is cov/corr matrix or raw data
         '''
         
         self.ismat         = ismat
@@ -330,6 +437,15 @@ class RMT:
         self.evals, self.evecs = PCA(self.data, ismat = ismat).fit().get_decomp()
         
     def fitKDE(self,  KDE_bwidth = 0.01, x = None):
+        
+        '''
+        Parameters
+        ----------
+        KDE_bwidth: float
+            Bandwith for the Kernel Density Estimator (Default is 0.01)
+        x: vector
+            Data over which the pdf is evaluated. If None passed evaluates over unique values in the data (Default is None)
+        '''
     
         if x is None:
     
@@ -344,6 +460,18 @@ class RMT:
         return 
                                  
     def MarcenkoPastur(self, s2, q, points = 1000):
+        
+        '''
+        Parameters
+        ----------
+        s2: float
+            MP variance parameter
+        q: float
+            Ratio, T/N of the dimensions of the matrix
+        points: int
+            Linspace over which the PDF is calculated
+        '''
+        
 
         max_expected_eval = s2 * (1 + (1/q)**0.5)**2
         min_expected_eval = s2 * (1 - (1/q)**0.5)**2
@@ -356,6 +484,17 @@ class RMT:
     
     def PDFdiff(self, s2, q, KDE_bwidth):
         
+        '''
+        Parameters
+        ----------
+        s2: float
+            MP variance parameter
+        q: float
+            Ratio, T/N of the dimensions of the matrix
+        KDE_bwidth: float
+            Bandwith for the Kernel Density Estimator (Default is 0.01)
+        '''
+        
         self.MarcenkoPastur(s2, q)
         self.fitKDE(KDE_bwidth, x = self.linspace)
         
@@ -364,10 +503,22 @@ class RMT:
     def optimise(self, q = 10, KDE_bwidth = 0.01, plot = False, verbose = False):
         
         '''
-        -q: Ratio of dimensions of matrix
+        Parameters
+        ----------
+        q: float
+            Ratio, T/N of the dimensions of the matrix
+        KDE_bwidth: float
+            Bandwith for the Kernel Density Estimator (Default is 0.01)
+        plot: Bool
+            Boolean indicator to plot the distributions (Default is False)
+        verbose: Bool
+            Boolean indicator for descriptive printing (Default is False)    
         '''
         
-        optimised = minimize(lambda *x: self.PDFdiff(*x), 0.5, args = (q, KDE_bwidth), bounds = ((1e-5, 1-1e-5), ))
+        optimised = minimize(lambda *x: self.PDFdiff(*x), 
+                             0.5, 
+                             args = (q, KDE_bwidth), 
+                             bounds = ((1e-5, 1-1e-5), ))
         
         if optimised['success'] == True: 
             

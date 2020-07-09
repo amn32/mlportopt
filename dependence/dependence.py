@@ -3,7 +3,9 @@ import sys
 import scipy
 import numpy             as np
 import matplotlib.pyplot as plt
+import matplotlib.pylab  as pl
 import scipy.stats       as stats
+import seaborn           as sns
 
 from sklearn.metrics     import mutual_info_score
 from tqdm.notebook       import tqdm
@@ -12,9 +14,115 @@ from copulae             import (NormalCopula, ClaytonCopula, EmpiricalCopula, G
 from mlportopt.mixturemodels.mixturemodels       import *
 from mlportopt.preprocessing.preprocessing       import *
 
+class Distance:
+    
+    '''
+    Takes a similarity matrix and returns a distance matrix
+    '''
+    
+    def __init__(self, similarity_matrix, dist_measure = 'angular'):
+        
+        '''
+        Parameters
+        ----------
+        similarity_matrix: ndarray
+        dist_measure: str
+            The desired function that maps similarity (-1,1) to distance (0,1) (Default is 'angular') 
+            [Options: 'angular', 'abs_angular', 'sq_angular']
+        '''
+        
+        self.sim          = similarity_matrix
+        self.dist_measure = dist_measure
+        
+        ### Distance Functions ###
+        
+        self.angular_dist     = lambda sim: np.sqrt(0.5*(1-sim))
+        self.abs_angular_dist = lambda sim: np.sqrt(0.5*(1-np.abs(sim)))
+        self.sq_angular_dist  = lambda sim: np.sqrt(0.5*(1-np.square(sim)))
+        
+        self.valid_distances  = {'angular':self.angular_dist, 
+                                'abs_angular':self.abs_angular_dist, 
+                                'sq_angular':self.sq_angular_dist}
+        
+        return
+    
+    def __call__(self, condensed = False):
+        
+        '''
+        Parameters
+        ----------
+        condensed: Bool
+            Boolean indicator to determine whether a condensed matrix is returned
+        '''
+        
+        dist = self.valid_distances[self.dist_measure](self.sim)
+        
+        for i in range(dist.shape[0]):
+            for j in range(dist.shape[0]):
+                
+                if   i == j: dist[i,j] = 0
+                elif  i < j: dist[i,j] = dist[j,i] 
+                    
+        if condensed:
+            
+            return scipy.spatial.distance.squareform(dist)
+        
+        else:
+        
+            return dist
+
 class Dependence:
     
+    '''
+    Compute a similarity (or distance) matrix
+    
+    Methods
+    -------
+    
+    MICoeff(x, y)
+        Calculate the (normalised) mutual information coefficient between x and y
+    VICoeff(x,y)
+        Calculate the (normalised) variation of information coefficient between x and y
+    CEcoeff(x,y)
+        Calculate the entropy of the empricial copula of x and y. Theoretically approximate to MI.
+    CDcoeff(X, Y, copula = None)
+        Calculate the optimal transport solution between a fitted copula and two reference copulas (Random and Positive Dependence), normalised to a coefficient.
+    get_copula(X,Y)
+        Calculate the copula of x and y. If copula specified in fit() is not the empricial copula, a copula is estimated and samples returned. Else the empricial (deheuvels) copula is returned.
+    corrcoef(x,y)
+        Calaculate the Pearson correlation coefficient
+    GMM_sample(x,y)
+        Fit Gaussian Mixture Models to x and y and return samples from the fitted distributions
+    wasserstein_dist(sam1, sam2)
+        Compute the Wasserstein distance between the two samples
+    GMM_wass(x, y)
+        Fit GMMs, sample and return the Wasserstein distance between the two distributions
+    fit(metric = 'MI', copula = None, dist_measure = None, condensed = True)
+        Fit method
+    to_dist(similarity_matrix, dist_measure, condensed = True, tform = True)
+        Map similairt matrix to distance matrix
+    pair_summary(X, Y)
+        Calculate the pairwise dependence for all metrics
+    plot_copula(X,Y,copula)
+        Plot the fitted copula
+    '''
+    
+    
     def __init__(self, data, n_samples = 1000, rmt_denoise = None):
+        
+        '''
+        Parameters
+        ----------
+        data: ndarray
+        n_samples: int
+            Number of samples to generate in mixture model and copula methods (Default is 1000)
+        rmt_denoise: str
+            Boolean indicator to use Random Matrix Theory toolkit to clean similarity matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
+        '''
+        
+        if len(data.shape) == 1:
+            
+            data = data.reshape(-1,1)
         
         self.data        = data
         
@@ -22,12 +130,16 @@ class Dependence:
         
         self.rmt_denoise = rmt_denoise
         
-        self.n_samples   = n_samples # used for MC simulations in various metrics
+        self.n_samples   = n_samples
         
-        self.copula_dict = {'deheuvels': None, 'gaussian':NormalCopula, 'student':StudentCopula, 'clayton': ClaytonCopula, 'gumbel':GumbelCopula}
+        self.copula_dict = {'deheuvels': None, 
+                            'gaussian':  NormalCopula, 
+                            'student':   StudentCopula, 
+                            'clayton':   ClaytonCopula, 
+                            'gumbel':    GumbelCopula}
         
         self.sim_measures  = ['CE', 'corr', 'VI', 'MI']
-        self.dist_measures = ['Wasserstein', 'CD']
+        self.distances     = ['Wasserstein', 'CD']
         
         self.copulas       = list(self.copula_dict.keys())
         
@@ -96,6 +208,13 @@ class Dependence:
         return CE
     
     def CDcoeff(self, X, Y, copula = None):
+        
+        '''
+        Parameters
+        ----------
+        copula: str
+            Chosen copula [Options: 'deheuvels', 'gaussian','student','clayton','gumbel'] (Default is None)
+        '''
         
         if copula is not None:
             
@@ -196,15 +315,28 @@ class Dependence:
         
         return self.wasserstein_dist(sam1, sam2)
     
-    def fit(self, metric = 'MI', copula = None, distance = True, condensed = True):
+    def fit(self, metric = 'MI', copula = None, dist_measure = None, condensed = True):
+        
+        '''
+        Parameters
+        ----------
+        metric: str
+            Chosen metric [Options: 'MI', 'VI','CE','CD','corr','Waaserstein'] (Default is 'MI')
+        copula: str
+            Chosen copula [Options: 'deheuvels', 'gaussian','student','clayton','gumbel'] (Default is None)
+        dist_measure: str
+            Chosen distance measure [Options: 'angular', 'abs_angular', 'sq_angular'] (Default is None)
+        condensed: 
+            Boolean indicator to determine whether a condensed matrix is returned if dist_measure not None (Default is True)
+        '''
         
         if metric == 'corr': 
             
             sim = np.corrcoef(self.data)
             
-            if distance: 
+            if dist_measure is not None: 
             
-                return self.to_dist(sim, condensed)
+                return self.to_dist(sim, dist_measure, condensed)
             
             else: 
             
@@ -222,22 +354,13 @@ class Dependence:
         
 
         for i in range(n):
-            
             for j in range(n):
                 
                 print(f'Estimating dependence measure for asset {i} and asset {j} out of {n} x {n}\r', end="")
                 
-                if i == j: 
-                    
-                    sim[i,j] = 1
-                
-                elif j>i:
-                    
-                    sim[i,j] = func(self.data[i,:],self.data[j,:])
-                    
-                else:
-                    
-                    sim[i,j] = sim[j,i]
+                if i == j:  sim[i,j] = 1
+                elif j>i:   sim[i,j] = func(self.data[i,:],self.data[j,:])  
+                else:       sim[i,j] = sim[j,i]
                     
         if self.rmt_denoise is not None and metric in self.sim_measures:
             
@@ -248,48 +371,41 @@ class Dependence:
             for i in range(n):
                 for j in range(n):
                 
-                    if i == j: 
+                    if i == j: sim[i,j] = 1
 
-                        sim[i,j] = 1
-
-        if metric in self.dist_measures:
+        if metric in self.distances:
                         
             return self.to_dist(sim, condensed, tform = False)
                         
-        elif distance: 
+        elif dist_measure is not None: 
             
-            return self.to_dist(sim, condensed)
+            return self.to_dist(sim, dist_measure, condensed)
         
         else: 
             
             return sim   
         
-    def to_dist(self, similarity_matrix, condensed = True, tform = True):
+    def to_dist(self, similarity_matrix, dist_measure, condensed = True, tform = True):
+        
+        '''
+        Parameters
+        ----------
+        similarity_matrix: ndarray
+        dist_measure: str
+            Chosen distance measure [Options: 'angular', 'abs_angular', 'sq_angular']
+        condensed: Bool
+            Boolean indicator to determine whether a condensed matrix is returned if dist_measure not None (Default is True)
+        tform: Bool
+            Boolean indicator to determine whether to transform to a distance measue (Default is True)
+        '''
         
         dist = similarity_matrix.copy()
         
-        if tform: dist = np.sqrt(0.5*(1 - similarity_matrix))
+        if tform: 
+            
+            dist = Distance(similarity_matrix, dist_measure)(condensed)
         
-        n    = dist.shape[0]
-        
-        for i in range(n):
-            for j in range(n):
-
-                if i == j: 
-
-                    dist[i,j] = 0
-                    
-                if i < j:
-                    
-                    dist[i,j] = dist[j,i]
-        
-        if condensed:
-
-            return scipy.spatial.distance.squareform(dist)
-        
-        else:
-        
-            return dist
+        return dist
     
     def pair_summary(self, X, Y):
         
@@ -298,9 +414,9 @@ class Dependence:
         sub_dep  = Dependence(np.array((X,Y)))
         
         dep_dict['Pearson Correlation']       = sub_dep.fit(metric = 'corr', dist = False)[0,1]
-        dep_dict['Variation of Information']  = sub_dep.fit(metric = 'VI', dist = False)[0,1]
-        dep_dict['Mutual Information']        = sub_dep.fit(metric = 'MI', dist = False)[0,1]
-        dep_dict['Copula Entropy']            = sub_dep.fit(metric = 'CE', dist = False)[0,1]
+        dep_dict['Variation of Information']  = sub_dep.fit(metric = 'VI',   dist = False)[0,1]
+        dep_dict['Mutual Information']        = sub_dep.fit(metric = 'MI',   dist = False)[0,1]
+        dep_dict['Copula Entropy']            = sub_dep.fit(metric = 'CE',   dist = False)[0,1]
         
         for i in self.copulas:
             

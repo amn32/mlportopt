@@ -11,25 +11,54 @@ from scipy.optimize    import fsolve
 
 class GMM:
     
-    '''1D Gaussian Mixture Model - Optimised by expectation maximisation'''
+    '''
+    1D Gaussian Mixture Model - Optimised by expectation maximisation
+    
+    Methods
+    -------
+    
+    reparam_pi()
+        Reparameterises the mixing proportions if model is constrained
+    calculate_expectation()
+    optimise()
+        Maximises the expctation
+    fit()
+        Calls the EM methods for n iterations
+    print_params
+        Prints the model parameters
+    predict
+        Predicts which component data are most likely to be assigned to
+    sample
+        Generate samples from the fitted model
+    '''
     
     def __init__(self, data, 
                  clusters       = 3, 
                  epochs         = 10, 
                  seed           = True, 
                  initialisation = 'Kmeans',
-                 bias           = 0.4,
-                 constrained    = 'True',
+                 bias           = 0.2,
+                 constrained    = True,
                  constraints    = [0.1,0.8,0.1],
                  verbose        = False):
         
         '''
-        - clusters: number of Gaussians to include
-        - epochs:   number of iterations
-        - initialisation: 'Kmeans' or 'Fixed' initialisation of the clusters. Fixed sections off tail data as a proportion (bias) of the range from the min/max.
-        - bias: proportion of the range that the tail Gaussians are assigned to.
-        - constrained: Boolean indicator for whether the mixing proportions should be constrained
-        - constraints: Maximum mixing proportions for the tails (the centre Gaussian is assigned the difference).
+        Parameters
+        ----------
+        clusters: int
+            Number of Gaussians to include (Default is 3)
+        epochs:   
+            Number of iterations (Default is 10)
+        initialisation: str
+            Iinitialisation of the clusters (Default is 'Fixed') [Options: 'Fixed', 'KMeans'] - Fixed sections off tail data as a proportion (bias) of the range from the min/max.
+        bias: float
+            Proportion of the range that the tail Gaussians are assigned to if 'Fixed' is chosen (Default is 0.2)
+        constrained: Bool
+            Boolean indicator for whether the mixing proportions should be constrained (Default is True)
+        constraints: list
+            Maximum mixing proportions for the tails (the centre Gaussian is assigned the difference) (Default is [0.1,0.8,0.1])
+        verbose: Bool
+            Boolean indicator for descriptive print statements
         '''
         
         if seed: np.random.seed(0)

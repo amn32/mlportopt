@@ -10,13 +10,32 @@ from mlportopt.dependence    import *
 
 class scipy_linkage:
     
-    def __init__(self, data, metric = 'corr', method = 'single', copula = None, rmt_denoise = None):
+    '''Wrapper Class to hierarchcially cluster data through the scipy.linkage function, using mlportopt dependence measures'''
+    
+    def __init__(self, data, metric = 'corr', method = 'single', distance = 'angular', copula = None, rmt_denoise = None):
+        
+        '''
+        Parameters
+        ----------
+        data: ndarray
+        metric: str
+            Dependence metric of choice [Options: 'MI', 'VI','CE','CD','corr','Waaserstein'] (Default is 'corr')
+        method: str
+            Linkage method [Options: 'single', 'average', 'complete', 'ward'] (Default is 'single')
+        copula: str
+            Chosen copula [Options: 'deheuvels', 'gaussian','student','clayton','gumbel'] (Default is None)
+        dist_measure: str
+            Chosen distance measure [Options: 'angular', 'abs_angular', 'sq_angular'] (Default is 'angular')
+        rmt_denoise: str
+            Boolean indicator to use Random Matrix Theory toolkit to clean similarity matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
+
+        '''
         
         self.data    = data
         self.method  = method
         
         dep          = Dependence(self.data, rmt_denoise = rmt_denoise)
-        self.dist    = dep.fit(metric, distance = True, condensed = True, copula = copula)
+        self.dist    = dep.fit(metric = metric, dist_measure = distance, condensed = True, copula = copula)
         
         self.linkage = linkage(self.dist, self.method)
         
@@ -30,7 +49,38 @@ class scipy_linkage:
 
 class BHC:
     
+    '''Bayesian Hierarchical Agglomerative Clustering - splits determined through likelihood tests
+    
+    Methods
+    -------
+    
+    log_likelihood(x)
+        Evaluate the log likelihood at x
+    reinitialise()
+        Reinitialise parameters after merges
+    compute_odds
+        Compute the (log) odds of cluster merges
+    fit(reweight = True)
+        Perform BHC by comapring all possible merges until all data are merged into one cluster
+    plot_dend()
+        Plot the fitted dendrogram
+    '''
+    
     def __init__(self, data, alpha = 0.001, beta = 0.001, gamma = 1, rmt_denoise = None):
+        
+        '''
+        Parameters
+        ----------
+        data: ndarray
+        alpha: float
+            Initial value for alpha (Default is 0.001)
+        beta: float
+            Initial value for beta (Default is 0.001)
+        gamma: float
+            Initial value for gamma (Default is 1)
+        rmt_denoise: str
+            Boolean indicator to use Random Matrix Theory toolkit to clean similarity matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
+        '''
         
         self.X           = data
         self.n           = data.shape[0]
@@ -121,7 +171,7 @@ class BHC:
 
         return
     
-    def compute_odds(self, i, j, show = False):
+    def compute_odds(self, i, j):
         
         x_t = self.x_0[i] + self.x_0[j]
     
@@ -154,6 +204,13 @@ class BHC:
         return
             
     def fit(self, reweight = True):
+        
+        '''
+        Parameters
+        ----------
+        reweight: Bool
+            Boolean indicator to rescale the linkage matrix
+        '''
             
         initial_odds = [self.compute_odds(i, j) for i in range(self.n - 1) for j in range(i+1, self.n)]
         
