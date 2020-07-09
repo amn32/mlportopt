@@ -1,35 +1,27 @@
-# mlportopt
-
-Overview
-========
+# mlportopt - Overview
 
 mlportopt is a Python library for portfolio optimisation.
 
 Using machine learning clustering techniques and non-correlation based dependence measures, the aim is to achieve better out of sample risk adjusted returns than naive risk parity and Markowitz based portfolio optimisation techniques.
 
-Clustering
-==========
+## Clustering
 
-Divisive
---------
+### Divisive
 
 - Dirichlet Process Gaussian Mixture Model
 - Gaussian Process Variance Function based Clustering
 
-Agglomerative
--------------
+### Agglomerative
 
 - Single, Average, Complete linkage
 - Ward Clustering
 - Bayesian Hierarcical Clustering
 
-Other
------
+### Other
 
 - Self Organising (Kohonen) Map, implemented in TensorFlow
 
-Dependence Measures
-===================
+## Dependence Measures
 
 - Correlation
 - Mutual Information
@@ -38,15 +30,13 @@ Dependence Measures
 - Optimal Transport between empricial and reference copulas
 - Wasserstein distance between fitted mixture models
 
-Mixture Models
-==============
+## Mixture Models
 
 - Gaussian Mixture Models
 - Gauss-Gamma Mixture Models
 - PENDING: Additional extreme value - Gauss MM
 
-Preprocessing
-=============
+## Preprocessing
 
 - Dimensionality reducing AutoEncoder
 - PCA
@@ -54,15 +44,13 @@ Preprocessing
 - Beta-adjusted returns
 - Detoning
 
-Risk Metrics
-============
+## Risk Metrics
 
 - Volatility/Sharpe
 - Probabilistic Sharpe (Lopez de Prado)
 - VaR and CVaR under normality, student t and fitted Gaussian/Gauss-Gamma mixture models
 
-Portfolio Allocation
-====================
+## Portfolio Allocation
 
 - Risk Parity
 - Markowitz Optimisation (Maximum Sharpe)
