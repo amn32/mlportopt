@@ -8,6 +8,9 @@ from mlportopt.preprocessing import *
 from mlportopt.util          import *
 from mlportopt.dependence    import *
 
+import warnings
+warnings.filterwarnings("ignore", message="overflow encountered in exp")
+
 class scipy_linkage:
     
     '''Wrapper Class to hierarchcially cluster data through the scipy.linkage function, using mlportopt dependence measures'''
@@ -41,7 +44,6 @@ class scipy_linkage:
         
     def plot_dendrogram(self):
         
-        fig = plt.figure(figsize=(12, 8))
         dn  = dendrogram(self.linkage)
         plt.show()
         
@@ -95,7 +97,7 @@ class BHC:
         self.PP = []
         
         self.mu          = np.mean(self.X, axis = 0).reshape(-1,1)
-        self.cov         = np.cov((self.X/self.gamma).T)
+        self.cov         = np.cov((self.X/self.gamma), rowvar = False)
         self.n_0         = [1 for _ in range(self.n)]
         self.x_0         = [(i,) for i in range(self.n)]
         self.d_0         = [self.log_alpha for _ in range(self.n)] #!!!
@@ -139,7 +141,7 @@ class BHC:
                             + n * self.beta_factor * self.mu_muT \
                             - (self.beta_factor/self.beta) * self.feat_featT \
                             - 2 * self.beta_factor * self.mu_featT
-
+        
         log_like  = 0
         log_like += -(n*m/2) * np.log(2*np.pi) 
         log_like += (m/2) * np.log(self.beta_factor)
@@ -166,7 +168,7 @@ class BHC:
         self.x_0.append(self.x[most_prob])
         self.d_0.append(self.d[most_prob])
         self.n_0.append(1)
-        
+
         self.ml_0.append(self.probs[most_prob][0] + np.log(1+np.exp(self.probs[most_prob][1] - self.probs[most_prob][0])))
 
         return
@@ -230,7 +232,7 @@ class BHC:
                 
             for node in self.leaf_ind:
                 
-                self.compute_odds(self.n+tree_level, node, True)
+                self.compute_odds(self.n+tree_level, node)
             
             self.PP = [y for y in self.PP if self.clust_pairs[y][0] not in to_drop and self.clust_pairs[y][1] not in to_drop]
             self.leaf_ind.append(self.n + tree_level)
@@ -245,10 +247,13 @@ class BHC:
                     self.linkage[i][2] += self.linkage[self.linkage[i][0] - self.n][2]
                 if self.linkage[i][1] > (self.n - 1):
                     self.linkage[i][2] += self.linkage[self.linkage[i][1] - self.n][2]
-            return      
         
-    def plot_dend(self):
+        return      
+        
+    def plot_dendrogram(self):
 
         self.dend = dendrogram(self.linkage)
+        
+        plt.show()
 
         return 

@@ -37,7 +37,27 @@ def quasidiagonalise(link):
 
 class Allocate:
     
+    '''
+    Methods
+    -------
+    
+    cluster_risk_metric(inter_cluster_metric, intra_cluster_metric, index)
+        For a given cluster, calculate the intra and inter risk weightings
+    recursviely_partition(inter_cluster_metric = 'var', intra_cluster_metric = 'var')
+        Recursively partition to allocate weights
+    '''
+    
     def __init__(self, data, linkage_matrix, frequency = 'D'):
+        
+        '''
+        Parameters
+        ----------
+        data: ndarray
+        linkage: mat
+            Linkage matrix
+        frequency: str
+            Frequency of data [Options: 'D', 'W', 'M'] (Default is 'W')
+        '''
         
         self.data         = data
         self.n, self.m    = self.data.shape
@@ -54,6 +74,31 @@ class Allocate:
         self.sorted_index = quasidiagonalise(self.link)
         
     def cluster_risk_metric(self, inter_cluster_metric, intra_cluster_metric, index):
+        
+        '''
+        Parameters
+        ----------
+        inter_cluster_metric: str
+            Metric for inverse weighing at tree level - see Options (Default is 'var')
+        intra_cluster_metric: str
+            Metric for inverse weighing at cluster level - see Options (Default is 'var')
+            
+        Options
+        -------
+        - prob_sharpe
+        - ann_sharpe
+        - sharpe
+        - var
+        - vol (std)
+        - ann_vol
+        - VaR - normal  (VaR under normality assumption)
+        - VaR - student (VaR under student t assumption)
+        - VaR - gmm     (VaR from fitted GMM samples)
+        - CVaR - normal  (CVaR under normality assumption)
+        - CVaR - student (CVaR under student t assumption)
+        - CVaR - gmm     (CVaR from fitted GMM samples)
+        '''
+
         
         intra_gmm, inter_gmm = None, None
         if 'gmm' in intra_cluster_metric: intra_gmm = 'Gauss'
@@ -85,7 +130,7 @@ class Allocate:
 
         return cluster_metric
     
-    def recursively_partition(self, inter_cluster_metric = 'var', intra_cluster_metric = 'var'): # Recursively partition as per Lopez de Prado
+    def recursively_partition(self, inter_cluster_metric = 'var', intra_cluster_metric = 'var'): 
         
         w       = np.ones(len(self.sorted_index))
         
@@ -108,6 +153,8 @@ class Allocate:
         return w[np.sort(self.sorted_index)]
 
 class IVP:
+    
+    '''Risk Parity optimiser'''
     
     def __init__(self, data, frequency = 'D'):
         
@@ -140,6 +187,19 @@ class IVP:
 
 class Markowitz:
     
+    '''
+    Markowtiz Optimiser based on Monte Carlo sampling
+    
+    Methods
+    -------
+    random_portfolios(n_portfolios)
+        generate n_portfolios of random weightings (batched for efficiency)
+    optimise(n_portfolios = 10000, plot = True)
+        Return the maximum sharpe ratio portfolio
+    plot()
+        Plot the portfolios in the mean-variance space
+    '''
+    
     def __init__(self, data, frequency = 'D'):
         
         self.data        = data
@@ -160,7 +220,7 @@ class Markowitz:
         volatility = np.empty(n_portfolios)
         weights    = np.empty((n_portfolios, self.n))
         
-        for i in tqdm(range(iterations), leave = False):
+        for i in range(iterations):
         
             weights_    = np.random.random((5000, self.n))
             weights_   /= weights_.sum(axis = 1)[:,None]
@@ -197,6 +257,26 @@ class Markowitz:
         plt.title(f'Markowitz Bullet for {self.returns.shape[0]} random portfolios')
         
 class Evaluation:
+    
+    '''Evaluation class for comparing portoflio optimisation methods
+    
+    Methods
+    -------
+    custom()
+        Weightings based on mlportopt clustering methods
+    markowitz()
+        Markowitz based Monte Carlo optimised weightings
+    hrp()
+        Hierarchical Risk Parity weightings (Lopez de Prado)
+    rp()
+        Naive risk parity weightings
+    all_data()
+        Collect weightings
+    plot_perf()
+        Plot the realised performance on a nominal £1000
+    summary()
+        Descriptive summary including plot
+    '''
     
     def __init__(self, train, test, weights, frequency = 'D'):
         
@@ -256,15 +336,19 @@ class Evaluation:
     def plot_perf(self):
         
         for k, v in self.all_data.items():
+            
+            plot_data = 1000*np.cumprod((v + 1))
+            
+            plot_data = np.insert(plot_data, 0, 1000)
  
-            plt.plot(1000*np.cumprod((v + 1)), label = k)
+            plt.plot(plot_data, label = k)
             plt.legend()
         
         plt.show()
         
         return
 
-    def summary(self):
+    def summary(self, verbose = True):
 
         columns = ['Ann. Ret', 'Ann. Vol', 'Sharpe', 'Prob. Sharpe', 'VaR', 'CVaR']
         
@@ -277,30 +361,30 @@ class Evaluation:
             rm = RiskMetrics()
             rm.fit(v, self.frequency)
             
-            mean       = (np.cumprod(v + 1) - 1)[-1] * (v.shape[0]/self.freq)
+            mean       = rm('ann_ret')
             vol        = rm('ann_vol')
             sharpe     = rm('ann_sharpe')
-            p_sharpe   = rm('prob_sharpe')[0]
+            p_sharpe   = rm('prob_sharpe')
             norm_var   = rm('VaR - normal')
             norm_cvar  = rm('CVaR - normal')
 
             data_[i,:] = [mean, vol, sharpe, p_sharpe, norm_var, norm_cvar]
             
-        df = pd.DataFrame(data_, index = rows, columns = columns)
+        self.summary_df = pd.DataFrame(data_, index = rows, columns = columns)
         
-        print(df)
+        if verbose: print(self.summary_df)
         
         return
 
-    def __call__(self):
+    def __call__(self, plot = True):
         
         self.custom()
         self.markowitz()
         self.hrp()
         self.rp()
         self.all_data()
-        self.plot_perf()
-        self.summary()
+        if plot: self.plot_perf()
+        self.summary(plot)
         
         return
         

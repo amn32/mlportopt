@@ -117,7 +117,7 @@ class Dependence:
         n_samples: int
             Number of samples to generate in mixture model and copula methods (Default is 1000)
         rmt_denoise: str
-            Boolean indicator to use Random Matrix Theory toolkit to clean similarity matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
+            If not None, the Random Matrix Theoretical approach to clean similarity matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
         '''
         
         if len(data.shape) == 1:
@@ -148,7 +148,7 @@ class Dependence:
         n    = x.shape[0]
 
         corr = np.corrcoef(x, y)[0,1]
-
+        
         bins = int(np.round(0.5*np.sqrt(2)*np.sqrt(1 + np.sqrt(1+(24*n)/(1 - corr**2))), 0))
 
         entropy_x = stats.entropy(np.histogram(x, bins)[0])
@@ -165,7 +165,7 @@ class Dependence:
         n    = x.shape[0]
 
         corr = np.corrcoef(x, y)[0,1]
-
+        
         bins = int(np.round(0.5*np.sqrt(2)*np.sqrt(1 + np.sqrt(1+(24*n)/(1 - corr**2))), 0))
 
         entropy_x = stats.entropy(np.histogram(x, bins)[0])
@@ -179,16 +179,16 @@ class Dependence:
 
         return VI
     
-    def CEcoeff(self, X,Y):
+    def CEcoeff(self, x, y):
     
         n     = X.shape[0]
 
-        corr  = np.corrcoef(X, Y)[0,1]
-
+        corr  = np.corrcoef(x, y)[0,1]
+        
         bins  = int(np.round(0.5*np.sqrt(2)*np.sqrt(1 + np.sqrt(1+(24*n)/(1 - corr**2))), 0))
 
-        Xrank = stats.rankdata(X,'ordinal') / len(X)
-        Yrank = stats.rankdata(Y,'ordinal') / len(Y)
+        Xrank = stats.rankdata(x,'ordinal') / len(x)
+        Yrank = stats.rankdata(y,'ordinal') / len(y)
 
         empirical = np.histogram2d(Xrank, Yrank, bins = bins, density = True)[0]
 
@@ -196,8 +196,8 @@ class Dependence:
 
         bin_area  = (frequency/(empirical+1e-9)/n)[0,0]
 
-        entropy_x = stats.entropy(np.histogram(X, bins)[0])
-        entropy_y = stats.entropy(np.histogram(Y, bins)[0])
+        entropy_x = stats.entropy(np.histogram(x, bins)[0])
+        entropy_y = stats.entropy(np.histogram(y, bins)[0])
 
         c   = empirical.flatten() + 1e-9
 
@@ -321,7 +321,7 @@ class Dependence:
         Parameters
         ----------
         metric: str
-            Chosen metric [Options: 'MI', 'VI','CE','CD','corr','Waaserstein'] (Default is 'MI')
+            Chosen metric [Options: 'MI', 'VI','CE','CD','corr','Waserstein'] (Default is 'MI')
         copula: str
             Chosen copula [Options: 'deheuvels', 'gaussian','student','clayton','gumbel'] (Default is None)
         dist_measure: str
@@ -359,7 +359,7 @@ class Dependence:
                 print(f'Estimating dependence measure for asset {i} and asset {j} out of {n} x {n}\r', end="")
                 
                 if i == j:  sim[i,j] = 1
-                elif j>i:   sim[i,j] = func(self.data[i,:],self.data[j,:])  
+                elif j>i:   sim[i,j] = func(self.data[i,:],self.data[j,:])   
                 else:       sim[i,j] = sim[j,i]
                     
         if self.rmt_denoise is not None and metric in self.sim_measures:

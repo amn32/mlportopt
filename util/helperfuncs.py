@@ -244,13 +244,13 @@ def merge_clusters(data, clusters, resids = None, freq = 'W', method = 'ann_vol'
     
         data_risk_measure[i] = RiskMetrics().fit(data[i, :].T, freq = freq)('ann_vol')
         
-    weights = (1/data_risk_measure)/(1/data_risk_measure).sum(0)
+    weights = (1/data_risk_measure) #/(1/data_risk_measure).sum(0)
 
     for i, j in enumerate(np.unique(clusters)):
         
         clust_ind        = clusters == j
         
-        sub_weights      = weights[clust_ind]/weights[clust_ind].sum() # Check if weights should be normalised in previosu stage
+        sub_weights      = weights[clust_ind]/weights[clust_ind].sum()
         
         clust_weights[j] = sub_weights
         

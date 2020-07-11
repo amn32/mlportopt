@@ -127,7 +127,13 @@ class RiskMetrics:
             gmm      = np.percentile(self.gmm_samples, (100 - percentile))
             cgmm     = self.gmm_samples[self.gmm_samples < gmm].mean()
         
-        cnorm    = self.data[self.data < norm].mean()
+        if np.any(self.data < norm):
+        
+            cnorm    = self.data[self.data < norm].mean()
+            
+        else:
+            
+            cnorm = None
         
         if np.any(self.data < student):
         
@@ -191,7 +197,11 @@ class RiskMetrics:
         
         if metric == 'prob_sharpe':
         
-            return self.prob_sharpe, self.req_samples
+            return self.prob_sharpe 
+        
+        elif metric == 'req_samples': # Not a risk metric but useful
+        
+            return self.req_samples
         
         elif metric == 'ann_sharpe':
             
@@ -208,6 +218,10 @@ class RiskMetrics:
         elif metric == 'vol':
             
             return self.data.std()
+        
+        elif metric == 'ann_ret':
+            
+            return self.data.mean() * self.freq
         
         elif metric == 'ann_vol':
             

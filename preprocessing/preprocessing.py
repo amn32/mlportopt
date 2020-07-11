@@ -336,7 +336,7 @@ class DimAE:
     
 ################################################################################################################################################################################
     
-def PCA_(data, n, labels = 'r', visualise = True):
+def PCA_(data, n, labels = 'r', visualise = False):
     
     '''
     sklearn PCA, actually performs Singular Value Decomposition

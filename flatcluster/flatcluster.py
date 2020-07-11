@@ -5,17 +5,22 @@ import numpy                as np
 import matplotlib.pyplot    as plt
 import os
 import itertools
+import scipy
 from matplotlib             import cm
+from sklearn.decomposition  import PCA as sklearn_PCA
 from IPython.display        import Image
 from scipy                  import stats
-from sklearn.decomposition  import PCA
 from tensorflow             import keras
 from ipypb                  import ipb as tqdm
 from scipy.spatial.distance import cdist
 from scipy.special          import gammaln, digamma
 
+import tensorflow.python.util.deprecation as deprecation
+deprecation._PRINT_DEPRECATION_WARNINGS = False
+
 # from mlportopt.util import *
 from mlportopt.preprocessing import *
+tf.disable_eager_execution()
 
 class TFSOM:
     
@@ -105,13 +110,15 @@ class TFSOM:
         
         self.optimiser()
         
-        for iteration in tqdm(range(self.iters), leave = False):
+        for iteration in range(self.iters):
             
             for train in x_train:
                 
                 self.sess.run(self.optimise, feed_dict={self.x: train.reshape(-1,1),self.progress: iteration})
 
         self.fitted_weights  = np.array(self.sess.run(self.weights))
+        
+        return self
 
     def fit(self, x):
         
@@ -123,13 +130,17 @@ class TFSOM:
             
             distances_to_nodes = [np.linalg.norm(x[j,:] - self.fitted_weights[i]) for i in range(self.fitted_weights.shape[0])]
             
-            node_distances[j]  = distances_to_nodes
+            node_distances[j]  = distances_to_nodes.copy()
             
             best_node          = self.nodes[np.argmin(distances_to_nodes)]
             
             fitted[j]          = best_node
+            
+        _, keep = np.unique(fitted, return_inverse = True, axis = 0)
+
+        self.assigned_clusters = keep.copy()
         
-        return fitted, node_distances
+        return self
     
 ###################################################################################################################################################################################### 
 
@@ -238,8 +249,8 @@ class GPcluster:
         
         if overwrite_l:
             
-            l = np.array(self.l_val*new_m)
-        
+            l = np.array(list(self.l_val)*new_m)
+
         x1 = x1/(l**2)
         x2 = x2/(l**2)
 
@@ -344,11 +355,11 @@ class GPcluster:
         
         points = np.empty(self.X.shape)
         
-        for i in tqdm(self.X.shape[0], leave = False):
+        for i in range(self.X.shape[0]):
           
             points[i,:] = self.gradient_descent(self.X[i,:].reshape(1,-1))
-        
-        self.pca = PCA(n_components = self.latent)
+            
+        self.pca = sklearn_PCA(n_components = self.latent)
         
         points = self.pca.fit(points).transform(points)
         
@@ -460,13 +471,13 @@ class GPcluster:
     
     def data_clusters(self):
         
-        self.final_clusters = np.zeros(self.X.shape[0])
+        self.assigned_clusters = np.zeros(self.X.shape[0])
         
         self.cluster_map = {i:j for i,j in zip(np.unique(self.data_assignments), self.assigned_cluster_equilibria)}
     
         for i, item in enumerate(self.data_assignments):
             
-             self.final_clusters[i] = self.cluster_map[item]
+             self.assigned_clusters[i] = self.cluster_map[item]
                 
         return 
     
@@ -850,7 +861,7 @@ class DPGMM(support):
         self.reparameterise(self.params0[:,keep])
         self.assigned_clusters = np.argmax(self.params, axis = 1)
         
-        return
+        return self
             
     def split_cluster(self, clust_num, threshold=0.9):
         
