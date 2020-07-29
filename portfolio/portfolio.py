@@ -85,6 +85,7 @@ class Allocate:
             
         Options
         -------
+        - uniform
         - prob_sharpe
         - ann_sharpe
         - sharpe
@@ -99,7 +100,6 @@ class Allocate:
         - CVaR - gmm     (CVaR from fitted GMM samples)
         '''
 
-        
         intra_gmm, inter_gmm = None, None
         if 'gmm' in intra_cluster_metric: intra_gmm = 'Gauss'
         if 'gmm' in inter_cluster_metric: inter_gmm = 'Gauss'
@@ -222,13 +222,12 @@ class Markowitz:
         
         for i in range(iterations):
         
-            weights_    = np.random.random((5000, self.n))
+            weights_    = np.random.uniform(0,1, size = (5000, self.n))
             weights_   /= weights_.sum(axis = 1)[:,None]
 
-            
             weights[i*5000:5000*(i+1)]    = weights_
             returns[i*5000:5000*(i+1)]    = weights_ @ self.ann_returns 
-            volatility[i*5000:5000*(i+1)] = np.diag(np.sqrt(weights_ @ self.ann_cov @ weights_.T))
+            volatility[i*5000:5000*(i+1)] = np.diag(np.sqrt(np.abs(weights_ @ self.ann_cov @ weights_.T)))
 
         sharpes = returns/volatility
             
@@ -326,9 +325,9 @@ class Evaluation:
         
     def all_data(self):
         
-        self.all_data = {'Custom': self.my_data, 
+        self.all_data = {'Custom': self.my_data,
+                         'HRP':self.hrp_data,
                          'MK': self.mk_data, 
-                         'HRP':self.hrp_data, 
                          'IVP':self.ivp_data}
         
         return
@@ -350,14 +349,14 @@ class Evaluation:
 
     def summary(self, verbose = True):
 
-        columns = ['Ann. Ret', 'Ann. Vol', 'Sharpe', 'Prob. Sharpe', 'VaR', 'CVaR']
+        columns = ['HRP - PSharpe','Ann. Ret', 'Ann. Vol', 'Sharpe', 'Prob. Sharpe', 'VaR', 'CVaR']
         
         rows    = list(self.all_data.keys())
         
         data_   = np.empty((len(rows), len(columns)))
         
         for i, v in enumerate(self.all_data.values()):
-        
+
             rm = RiskMetrics()
             rm.fit(v, self.frequency)
             
@@ -368,8 +367,12 @@ class Evaluation:
             norm_var   = rm('VaR - normal')
             norm_cvar  = rm('CVaR - normal')
 
-            data_[i,:] = [mean, vol, sharpe, p_sharpe, norm_var, norm_cvar]
+            rm             = RiskMetrics()
+            rm.fit(v, freq = self.frequency, bmark = self.all_data['HRP'])
+            adj_psharpe    = rm('prob_sharpe')
             
+            data_[i,:] = [adj_psharpe, mean, vol, sharpe, p_sharpe, norm_var, norm_cvar]
+                        
         self.summary_df = pd.DataFrame(data_, index = rows, columns = columns)
         
         if verbose: print(self.summary_df)

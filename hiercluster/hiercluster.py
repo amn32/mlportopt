@@ -33,7 +33,6 @@ class scipy_linkage:
             Boolean indicator to use Random Matrix Theory toolkit to clean similarity matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
 
         '''
-        
         self.data    = data
         self.method  = method
         
@@ -63,23 +62,25 @@ class BHC:
     compute_odds
         Compute the (log) odds of cluster merges
     fit(reweight = True)
-        Perform BHC by comapring all possible merges until all data are merged into one cluster
+        Perform BHC by comparing all possible merges until all data are merged into one cluster
     plot_dend()
         Plot the fitted dendrogram
     '''
     
-    def __init__(self, data, alpha = 0.001, beta = 0.001, gamma = 1, rmt_denoise = None):
+    def __init__(self, data, alpha = 0.001, kappa = 0.001, beta = 1, gamma = None, cov_scale = 1, rmt_denoise = None):
         
         '''
         Parameters
         ----------
         data: ndarray
         alpha: float
-            Initial value for alpha (Default is 0.001)
+            Scaling factor on the precision of the Gaussian prior on the mean (Default is 0.001)
         beta: float
-            Initial value for beta (Default is 0.001)
+            Wishart prior hyperparameter (Default is 1)
         gamma: float
-            Initial value for gamma (Default is 1)
+            Gaussian Prior on the mean (Default is None)
+        kappa: float
+            Clustering hyperparameter (Default is 0.001)
         rmt_denoise: str
             Boolean indicator to use Random Matrix Theory toolkit to clean similarity matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
         '''
@@ -90,22 +91,24 @@ class BHC:
         self.alpha       = alpha
         self.beta        = beta
         self.gamma       = gamma
+        self.kappa       = kappa
+        self.cov_scale   = cov_scale
         self.leaf_ind    = list(np.arange(self.n))
-        self.log_alpha   = np.log(alpha)
+        self.log_kappa   = np.log(kappa)
         self.rmt_denoise = rmt_denoise
         
         self.PP = []
         
         self.mu          = np.mean(self.X, axis = 0).reshape(-1,1)
-        self.cov         = np.cov((self.X/self.gamma), rowvar = False)
+        self.cov         = np.cov((self.X/self.beta), rowvar = False)
         self.n_0         = [1 for _ in range(self.n)]
         self.x_0         = [(i,) for i in range(self.n)]
-        self.d_0         = [self.log_alpha for _ in range(self.n)] #!!!
+        self.d_0         = [self.log_kappa for _ in range(self.n)]
         self.ml_0        = [self.log_likelihood(self.X[i,:].reshape(1,-1)) for i in range(self.n)]
         
         self.clust_pairs = []
         self.clusters    = []
-        self.log_alphas  = []
+        self.log_kappas  = []
         self.x           = []
         self.d           = []
         self.odds        = []
@@ -121,7 +124,7 @@ class BHC:
         self.n_m          = n + m
         self.feat         = np.sum(x, axis = 0).reshape(-1,1)
         
-        self.beta_factor  = self.beta/(self.beta + n)
+        self.alpha_factor  = self.alpha/(self.alpha + n)
         
         self.mu_muT       = self.mu @ self.mu.T
         self.XT_X         = x.T  @ x
@@ -138,13 +141,13 @@ class BHC:
         self.mu_featT     = self.mu @ self.feat.T
         
         self.PSI          = self.cov + self.XT_X \
-                            + n * self.beta_factor * self.mu_muT \
-                            - (self.beta_factor/self.beta) * self.feat_featT \
-                            - 2 * self.beta_factor * self.mu_featT
+                            + n * self.alpha_factor * self.mu_muT \
+                            - (self.alpha_factor/self.alpha) * self.feat_featT \
+                            - 2 * self.alpha_factor * self.mu_featT
         
         log_like  = 0
         log_like += -(n*m/2) * np.log(2*np.pi) 
-        log_like += (m/2) * np.log(self.beta_factor)
+        log_like += (m/2) * np.log(self.alpha_factor)
         log_like += (m/2) * np.linalg.slogdet(self.cov)[1]
         log_like += -(self.n_m/2) * np.linalg.slogdet(self.PSI)[1]
         log_like += np.sum(gammaln(0.5*(self.n_m - np.arange(m)))) + 0.5*self.n_m*m*np.log(2)
@@ -183,13 +186,13 @@ class BHC:
                 
         self.x.append(self.x_0[i] + self.x_0[j])
 
-        d_t      = self.log_alpha + gammaln(n_t) + np.log(1 + np.exp(self.d_0[i]+self.d_0[j] - self.log_alpha - gammaln(n_t)))
+        d_t      = self.log_kappa + gammaln(n_t) + np.log(1 + np.exp(self.d_0[i]+self.d_0[j] - self.log_kappa - gammaln(n_t)))
         
         self.d.append(d_t)
         
         data_t   = self.X[self.x[-1],:]
 
-        log_p_1  = self.log_likelihood(data_t) + self.log_alpha + gammaln(n_t) - d_t
+        log_p_1  = self.log_likelihood(data_t) + self.log_kappa + gammaln(n_t) - d_t
 
         log_p_2  = self.ml_0[i] + self.ml_0[j] + self.d_0[i] + self.d_0[j] - d_t
 

@@ -17,10 +17,6 @@ Using machine learning clustering techniques and non-correlation based dependenc
 - Ward Clustering
 - Bayesian Hierarcical Clustering
 
-### Other
-
-- Self Organising (Kohonen) Map, implemented in TensorFlow
-
 ## Dependence Measures
 
 - Correlation
@@ -40,6 +36,7 @@ Using machine learning clustering techniques and non-correlation based dependenc
 
 - Dimensionality reducing AutoEncoder
 - PCA
+- Self Organising (Kohonen) Map, implemented in TensorFlow
 - Random Matrix Theory based similarity matrix denoising (Targeted Shrinkage and Fixed Eigenvalue cleaning of Marcenko-Pastur implied random eigenvalues)
 - Beta-adjusted returns
 - Detoning

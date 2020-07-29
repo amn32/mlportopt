@@ -15,7 +15,14 @@ import lxml
 import os
 import shutil
 import datetime as dt
+
+#     import pandas_datareader.data as web
+from tqdm.notebook import tqdm
 from sklearn.linear_model import LinearRegression
+
+from pandas.tseries.offsets import BDay
+
+isBusinessDay = BDay().is_on_offset
 
 from mlportopt.riskmetrics.riskmetrics import RiskMetrics
 
@@ -110,13 +117,13 @@ def gen_clusters(clusters  = 4,
 
 def gen_covmatrix(n = 1000, m = 100, alpha = 0.995):
     
-    rand  = np.random.normal(size = (n, m))
+    rand  = np.random.normal(0, 5, size = (n, m))
     
     cov   = rand @ rand.T
     
-    cov  += np.diag(np.random.uniform(size = n))
+    cov  += np.diag(np.random.uniform(0,3,size = n))
 
-    noise = np.cov(np.random.normal(size = (n*(n//m), n)), rowvar = False)
+    noise = np.cov(np.random.normal(0, 1, size = (n*(n//m), n)), rowvar = False)
     
     cov   = alpha * noise + (1 - alpha) * cov
         
@@ -127,34 +134,55 @@ def gen_covmatrix(n = 1000, m = 100, alpha = 0.995):
 
     return cov, corr
 
-def gen_real_data(frequency = 'W', spy_adj = False, n = 100, m = 50, seed = 1, ret_data = False):
+def import_data(path = 'sp500_joined_closes.csv', frequency = 'D'):
+    
+    data       = pd.read_csv(path)
+    data.set_index('Date', inplace=True)
+    data       = data.loc['2015-01-01':,:]
+    null_index = list(~data.loc['2017-01-04'].isnull())
+    data       = data.loc[:,null_index].fillna(method = 'backfill')
+    data       = data.astype(float)
+    data.index = pd.to_datetime(data.index) 
+    bdays      = pd.to_datetime(data.index).map(isBusinessDay)
+    data       = data.loc[bdays,:]
+    
+#     checker    = data.pct_change().iloc[1:,:]
+
+#     checker    = checker.drop(columns=checker.columns[((checker==0).sum()>5)],axis=1)
+    
+#     filt_ind   = checker.columns
+    
+    sub_data   = data.groupby(pd.Grouper(freq=frequency)).last()
+    sub_data   = sub_data.pct_change()
+    sub_data   = sub_data.iloc[1:,:]
+
+    return sub_data
+
+def gen_real_data(frequency = 'W', spy_adj = False, n_assets = 100, window_length = None, start = None, end = None, seed = 1):
     
     np.random.seed(seed)
     
-    data = pd.read_csv('sp500_joined_closes.csv')
-    data.set_index('Date', inplace=True)
-    data = data.loc['2015-01-04':,:]
-    null_index = list(~data.loc['2017-01-04'].isnull())
-    data = data.loc[:,null_index].fillna(method = 'backfill')
-    data = data.astype(float)
-    data.index = pd.to_datetime(data.index)
+    sub_data = import_data(frequency = frequency)
     
-    sub_data = data.groupby(pd.Grouper(freq=frequency)).last()
-    sub_data = sub_data.pct_change()
-    sub_data = sub_data.iloc[2:,:]
-    
-    sub_ind1 = np.random.choice(range(sub_data.shape[1]),size = n, replace = False)
-    sub_ind2 = list(sub_data.index)[-m:]
-    sub_data = sub_data.iloc[:,sub_ind1]
-    sub_data = sub_data.loc[sub_ind2,:]
-    
-    if ret_data:
+    if window_length is None:
         
-        return sub_data.values.T, list(sub_data.columns), sub_data
+        sub_data = sub_data.loc[start:end, :]
+        
+    else: 
+        
+        sub_ind1 = list(sub_data.index)[-window_length:]
+        sub_data = sub_data.loc[sub_ind1, :]
+        
+    spind    = sub_data.loc[:,'^GSPC'].copy()
     
+    drop = ['^GSPC', 'TT', 'LW', 'HPE', 'FTV', 'AMCR']
+    
+    sub_data.drop(drop, axis = 1, inplace = True)
+    
+    sub_ind2 = np.random.choice(range(sub_data.shape[1]),size = n_assets, replace = False)
+    sub_data = sub_data.iloc[:,sub_ind2]
+
     if spy_adj:
-        
-        spind = get_spy(process = True, frequency = frequency, m = m)
         
         assert(np.all(list(sub_data.index) == list(spind.index)))
         
@@ -164,45 +192,7 @@ def gen_real_data(frequency = 'W', spy_adj = False, n = 100, m = 50, seed = 1, r
     
     else:
     
-        return sub_data.values.T, list(sub_data.columns)
-
-def get_spy(process = True, frequency = 'W', m = 50):
-
-    ticker = '^GSPC'
-    
-    if os.path.isdir('spy'): 
-        shutil.rmtree('spy')
-        os.makedirs('spy')
-    else:
-        os.makedirs('spy')
-
-    start = dt.datetime(2010, 1, 1)
-    end   = dt.datetime(2020, 3, 10) #dt.datetime.now()
-
-    df = yf.download(ticker, start, end, threads = True, progress = False)
-    df.reset_index(inplace=True)
-    df.set_index("Date", inplace=True)
-    df.to_csv('{}.csv'.format(ticker))
-    
-    if process:
-        
-        df.rename(columns={'Adj Close': 'SPY'}, inplace=True)
-        df.drop(['Open', 'High', 'Low', 'Close', 'Volume'], 1, inplace=True)
-        df = df.loc['2015-01-04':,:]
-        null_index = list(~df.loc['2017-01-04'].isnull())
-        df = df.loc[:,null_index].fillna(method = 'backfill')
-        df = df.astype(float)
-        df.index = pd.to_datetime(df.index)
-        sub_data = df.groupby(pd.Grouper(freq=frequency)).last()
-        sub_data = sub_data.pct_change()
-        sub_data = sub_data.iloc[2:,:]
-        
-        sub_ind2 = list(sub_data.index)[-m:]
-        sub_data = sub_data.loc[sub_ind2,:]
-        
-        df = sub_data.copy()
-        
-    return df
+        return sub_data.values.T, list(sub_data.columns), sub_data
 
 def beta_adjust(data, ind):
     
@@ -231,6 +221,10 @@ def merge_clusters(data, clusters, resids = None, freq = 'W', method = 'ann_vol'
     n, m              = data.shape
     
     unique            = np.unique(clusters).shape[0]
+    
+    if unique < 5:
+        
+        return data, resids, None
     
     data_risk_measure = np.empty(n)
     
@@ -277,3 +271,86 @@ def get_full_weights(flat_weights, cluster_weights):
             ind +=1    
             
     return np.array(full_weights)
+
+class SPY:
+    
+    def __init__(self, start, end):
+        
+        '''
+        Pass start and end as ISO 'YYYY-MM-DD'
+        '''
+        self.start = dt.datetime.fromisoformat(start)
+        self.end   = dt.datetime.fromisoformat(end)
+        
+    def save_sp500_tickers(self):
+        if os.path.isdir('temp_stock'): 
+            shutil.rmtree('temp_stock')
+            os.makedirs('temp_stock')
+        else:
+            os.makedirs('temp_stock')
+        resp = requests.get('http://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
+        soup = bs.BeautifulSoup(resp.text, 'html.parser')
+        table = soup.find('table', {'class': 'wikitable sortable'})
+        tickers = []
+        for row in table.findAll('tr')[1:]:
+            ticker = row.findAll('td')[0].text
+            tickers.append(ticker[:-1])
+        tickers.append('^GSPC')
+
+        with open("temp_stock/sp500tickers.pickle","wb") as f:
+            pickle.dump(tickers,f)
+
+        return tickers
+    
+    def get_data_from_yahoo(self):
+        with open("temp_stock/sp500tickers.pickle", "rb") as f:
+            tickers = pickle.load(f)
+            os.makedirs('temp_stock/stock_dfs')
+
+        start = self.start
+        end   = self.end
+        for ticker in tqdm(tickers, leave = False):
+            try:
+                df = yf.download(ticker, start, end, threads = True, progress = False)
+                df.reset_index(inplace=True)
+                df.set_index("Date", inplace=True)
+                df.to_csv('temp_stock/stock_dfs/{}.csv'.format(ticker))
+            except:
+                continue
+
+        return df
+    
+    def compile_data(self):
+        with open("temp_stock/sp500tickers.pickle", "rb") as f:
+            tickers = pickle.load(f)
+
+        main_df = pd.DataFrame()
+
+        for count, ticker in enumerate(tickers):
+            try:
+                df = pd.read_csv('temp_stock/stock_dfs/{}.csv'.format(ticker))
+                df.set_index('Date', inplace=True)
+
+                df.rename(columns={'Adj Close': ticker}, inplace=True)
+                df.drop(['Open', 'High', 'Low', 'Close', 'Volume'], 1, inplace=True)
+
+                if main_df.empty:
+                    main_df = df
+                else:
+                    main_df = main_df.join(df, how='outer')
+
+                if count % 100 == 0:
+                    print(count)
+            except:
+                continue
+        main_df.to_csv('sp500_joined_closes.csv')
+        shutil.rmtree('temp_stock')
+
+        
+    def __call__(self):
+        self.save_sp500_tickers()
+        self.get_data_from_yahoo()
+        self.compile_data()
+        return
+    
+    

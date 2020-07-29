@@ -28,21 +28,23 @@ class Distance:
         similarity_matrix: ndarray
         dist_measure: str
             The desired function that maps similarity (-1,1) to distance (0,1) (Default is 'angular') 
-            [Options: 'angular', 'abs_angular', 'sq_angular']
+            [Options: 'angular', 'corr_dist', 'acute_angular', 'abs_corr']
         '''
         
         self.sim          = similarity_matrix
         self.dist_measure = dist_measure
-        
+
         ### Distance Functions ###
         
-        self.angular_dist     = lambda sim: np.sqrt(0.5*(1-sim))
-        self.abs_angular_dist = lambda sim: np.sqrt(0.5*(1-np.abs(sim)))
-        self.sq_angular_dist  = lambda sim: np.sqrt(0.5*(1-np.square(sim)))
+        self.angular_dist     = lambda sim: np.arccos(sim)
+        self.corr_dist        = lambda sim: np.sqrt(0.5*(1-sim))
+        self.acute_angular    = lambda sim: 0.5*np.pi - np.abs(0.5*np.pi - np.arccos(sim))
+        self.abs_corr_dist    = lambda sim: np.sqrt(1-sim**2)
         
-        self.valid_distances  = {'angular':self.angular_dist, 
-                                'abs_angular':self.abs_angular_dist, 
-                                'sq_angular':self.sq_angular_dist}
+        self.valid_distances  = {'angular':self.angular_dist,
+                                 'corr_dist':self.corr_dist,
+                                 'acute_angular':self.acute_angular, 
+                                 'abs_corr':self.abs_corr_dist}
         
         return
     
@@ -100,7 +102,7 @@ class Dependence:
     fit(metric = 'MI', copula = None, dist_measure = None, condensed = True)
         Fit method
     to_dist(similarity_matrix, dist_measure, condensed = True, tform = True)
-        Map similairt matrix to distance matrix
+        Map similairity matrix to distance matrix
     pair_summary(X, Y)
         Calculate the pairwise dependence for all metrics
     plot_copula(X,Y,copula)
@@ -108,7 +110,7 @@ class Dependence:
     '''
     
     
-    def __init__(self, data, n_samples = 1000, rmt_denoise = None):
+    def __init__(self, data, n_samples = 1000, rmt_denoise = None, bins = None):
         
         '''
         Parameters
@@ -118,6 +120,8 @@ class Dependence:
             Number of samples to generate in mixture model and copula methods (Default is 1000)
         rmt_denoise: str
             If not None, the Random Matrix Theoretical approach to clean similarity matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
+        bins: int
+            Number of bins to use in density estimation. If None uses Hacine-Gharbi optimal number (Default is None)
         '''
         
         if len(data.shape) == 1:
@@ -131,6 +135,8 @@ class Dependence:
         self.rmt_denoise = rmt_denoise
         
         self.n_samples   = n_samples
+        
+        self.bins        = bins
         
         self.copula_dict = {'deheuvels': None, 
                             'gaussian':  NormalCopula, 
@@ -151,11 +157,17 @@ class Dependence:
         
         bins = int(np.round(0.5*np.sqrt(2)*np.sqrt(1 + np.sqrt(1+(24*n)/(1 - corr**2))), 0))
 
+        if self.bins is not None: bins = self.bins
+        
         entropy_x = stats.entropy(np.histogram(x, bins)[0])
         entropy_y = stats.entropy(np.histogram(y, bins)[0])
 
         MI   = mutual_info_score(None, None, contingency = np.histogram2d(x, y, bins)[0])
-
+        
+        self.original_MI = MI
+        
+        self.MI_dist     = 1-MI/max(entropy_x, entropy_y)
+        
         MI /= min(entropy_x, entropy_y)
 
         return MI
@@ -168,6 +180,8 @@ class Dependence:
         
         bins = int(np.round(0.5*np.sqrt(2)*np.sqrt(1 + np.sqrt(1+(24*n)/(1 - corr**2))), 0))
 
+        if self.bins is not None: bins = self.bins
+        
         entropy_x = stats.entropy(np.histogram(x, bins)[0])
         entropy_y = stats.entropy(np.histogram(y, bins)[0])
 
@@ -181,15 +195,17 @@ class Dependence:
     
     def CEcoeff(self, x, y):
     
-        n     = X.shape[0]
+        n     = x.shape[0]
 
         corr  = np.corrcoef(x, y)[0,1]
         
         bins  = int(np.round(0.5*np.sqrt(2)*np.sqrt(1 + np.sqrt(1+(24*n)/(1 - corr**2))), 0))
 
+        if self.bins is not None: bins = self.bins
+        
         Xrank = stats.rankdata(x,'ordinal') / len(x)
         Yrank = stats.rankdata(y,'ordinal') / len(y)
-
+        
         empirical = np.histogram2d(Xrank, Yrank, bins = bins, density = True)[0]
 
         frequency = np.histogram2d(Xrank, Yrank, bins = bins, density = False)[0]
@@ -202,6 +218,10 @@ class Dependence:
         c   = empirical.flatten() + 1e-9
 
         CE  = sum(c*np.log(c)*bin_area)
+        
+        self.original_CE = CE
+        
+        self.CE_dist     = 1 - CE/max(entropy_x, entropy_y)
 
         CE /= min(entropy_x, entropy_y)
 
@@ -242,15 +262,17 @@ class Dependence:
 
         m1        = np.trace(np.dot(np.transpose(p_tport), p_dist))
         m2        = np.trace(np.dot(np.transpose(r_tport), r_dist))
+        
+        if m1<1e-3: m1 = 0
 
-        return 1 - m1/(m1+m2)
+        return m1/(m1+m2)
     
     def get_copula(self, X, Y):
         
         if self.copula == 'deheuvels':
         
-            X_     = stats.rankdata(X) / len(X)
-            Y_     = stats.rankdata(Y) / len(Y)
+            X_     = stats.rankdata(X, 'ordinal') / len(X)
+            Y_     = stats.rankdata(Y, 'ordinal') / len(Y)
             
             copula    = np.array((X_,Y_)).T
             
@@ -321,26 +343,36 @@ class Dependence:
         Parameters
         ----------
         metric: str
-            Chosen metric [Options: 'MI', 'VI','CE','CD','corr','Waserstein'] (Default is 'MI')
+            Chosen metric [Options: 'MI', 'VI', 'CE', 'CD', 'corr', 'Waserstein'] (Default is 'MI')
         copula: str
             Chosen copula [Options: 'deheuvels', 'gaussian','student','clayton','gumbel'] (Default is None)
         dist_measure: str
-            Chosen distance measure [Options: 'angular', 'abs_angular', 'sq_angular'] (Default is None)
+            Chosen distance measure [Options: 'angular', 'abs_angular', 'sq_angular', 'MI', 'CE'] (Default is None)
         condensed: 
             Boolean indicator to determine whether a condensed matrix is returned if dist_measure not None (Default is True)
         '''
         
         if metric == 'corr': 
-            
+
             sim = np.corrcoef(self.data)
             
-            if dist_measure is not None: 
-            
+        if dist_measure is not None: 
+
+            if dist_measure == 'MI':
+
+                return self.MI_dist
+
+            elif dist_measure == 'CE':
+
+                return self.CE_dist
+
+            else:
+
                 return self.to_dist(sim, dist_measure, condensed)
-            
-            else: 
-            
-                return sim 
+
+        else: 
+
+            return sim 
         
         self.copula = copula
         n           = self.data.shape[0]
@@ -392,7 +424,7 @@ class Dependence:
         ----------
         similarity_matrix: ndarray
         dist_measure: str
-            Chosen distance measure [Options: 'angular', 'abs_angular', 'sq_angular']
+            Chosen distance measure [Options: 'angular', 'corr_dist', 'acute_angular', 'abs_corr']
         condensed: Bool
             Boolean indicator to determine whether a condensed matrix is returned if dist_measure not None (Default is True)
         tform: Bool

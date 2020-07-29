@@ -50,6 +50,7 @@ class RiskMetrics:
         self.freq  = self.annual[freq]
         self.alpha = alpha
         self.mm    = mm
+        self.bdata = bmark
 
         self.gmm_samples = None
         
@@ -158,7 +159,7 @@ class RiskMetrics:
         self.skew           = stats.skew(self.data)
         self.kurtosis       = stats.kurtosis(self.data, fisher = False)
         
-        self.sharpe_hat     = (np.mean(self.data)/np.std(self.data))
+        self.sharpe_hat     = np.mean(self.data)/np.std(self.data)
         
         self.ann_sharpe_hat = self.sharpe_hat * np.sqrt(self.freq)
         
@@ -170,10 +171,17 @@ class RiskMetrics:
         
         self.sharpe()
         
-        self.prob_sharpe = stats.norm.cdf((self.sharpe_hat - self.bmark) / self.s2_sharpe_hat)
+        if np.all(self.data == self.bdata): 
+            
+            self.prob_sharpe = 0
+            self.req_samples = 0
+            
+        else:
         
-        self.req_samples = 1 + (1 - self.skew * self.sharpe_hat + ((self.kurtosis - 1)/4)*self.sharpe_hat**2) * (stats.norm.ppf(1-self.alpha) / (self.sharpe_hat - self.bmark)) ** 2
-        
+            self.prob_sharpe = stats.norm.cdf((self.sharpe_hat - self.bmark) / self.s2_sharpe_hat)
+
+            self.req_samples = 1 + (1 - self.skew * self.sharpe_hat + ((self.kurtosis - 1)/4)*self.sharpe_hat**2) * (stats.norm.ppf(1-self.alpha) / (self.sharpe_hat - self.bmark)) ** 2
+
         return
     
     def __call__(self, metric = 'prob_sharpe'):
@@ -202,6 +210,10 @@ class RiskMetrics:
         elif metric == 'req_samples': # Not a risk metric but useful
         
             return self.req_samples
+        
+        elif metric == 'uniform':
+            
+            return 1
         
         elif metric == 'ann_sharpe':
             

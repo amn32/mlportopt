@@ -22,126 +22,6 @@ deprecation._PRINT_DEPRECATION_WARNINGS = False
 from mlportopt.preprocessing import *
 tf.disable_eager_execution()
 
-class TFSOM:
-    
-    '''
-    Tensorflow Self Organising Map
-    
-    Methods
-    -------
-    
-    optimiser()
-        Optimises the SOM
-    train(x)
-        Train the SOM
-    fit(x)
-        Project the data onto the SOM and return the region
-    '''
-    
-    def __init__(self, xdim, ydim, n_nodes, lr = 0.5, r = 0.5, iterations = 50):
-        
-        '''
-        Parameters
-        ----------
-        xdim: int
-            Number of horizontal nodes
-        ydim: int
-            Number of vertical nodes
-        n_nodes: int
-            Number of input features
-        lr: float, optional
-            Learning rate (default is 0.5)
-        r: float, optional
-            Initial map radius (default is 0.5)
-        iterations: int, optional
-            Number of iterations in training (default is 50)
-        '''
-        
-        if xdim is None: 
-            raise NotImplementedError('xdim not specified')
-        if ydim is None:
-            raise NotImplementedError('ydim not specified')
-        if n_nodes is None:
-            raise NotImplementedError('n_nodes not specified')
-        
-        tf.reset_default_graph() # Make sure we have no active sessions
-        self.xdim      = xdim
-        self.ydim      = ydim
-        self.lr        = lr
-        self.r         = r
-        self.n_nodes   = n_nodes
-        self.iters     = iterations
-        self.dtype     = 'float32'
-        self.size      = xdim*ydim
-        self.t_size    = tf.constant(self.size, 'int32')
-        self.progress  = tf.placeholder(self.dtype)
-        self.nodes     = np.array([[i,j] for i in range(xdim) for j in range(ydim)])
-        self.div       = tf.divide(self.progress, self.iters)
-        self.map       = tf.Graph()
-        self.euclid    = lambda p,q: tf.reduce_sum(tf.square(tf.subtract(p,q)), axis = 1) # Calculate Euclidean distance
-        self.weights   = tf.Variable(tf.random_normal([self.t_size, self.n_nodes]), dtype = self.dtype, name = 'weights')
-        self.x         = tf.placeholder(dtype = self.dtype, shape = (self.n_nodes, 1), name = 'data')
-        
-        self.big_x     = tf.transpose(tf.broadcast_to(self.x, (self.n_nodes, self.t_size)))
-        self.dist      = tf.sqrt(self.euclid(self.weights,self.big_x))
-        self.best      = tf.argmin(self.dist, axis = 0)
-        self.best_loc  = tf.reshape(tf.slice(self.nodes, tf.pad(tf.reshape(self.best, [1]), np.array([[0, 1]])), tf.cast(tf.constant(np.array([1, 2])), dtype=tf.int64)), [2])
-        self.dlr       = tf.multiply(self.lr, 1 - self.div)
-        self.radius    = tf.multiply(self.r,  1 - self.div)
-        
-    def optimiser(self):
-        
-        self.b_matrix  = tf.broadcast_to(self.best_loc, (self.size,2))
-        self.b_dist    = self.euclid(self.nodes, self.b_matrix)
-        self.surround  = tf.exp(tf.negative(tf.divide(tf.cast(self.b_dist, self.dtype), tf.cast(tf.square(self.radius), self.dtype))))
-        self.lr_matrix = tf.multiply(self.dlr, self.surround)    
-        self.factor    = tf.stack([tf.broadcast_to(tf.slice(self.lr_matrix, np.array([node]), np.array([1])), (self.n_nodes,)) for node in range(self.size)])        
-        self.factor   *= tf.subtract(tf.squeeze(tf.stack([self.x for i in range(self.size)]),2), self.weights)                              
-        fitted_weights = tf.add(self.weights, self.factor)
-        
-        self.optimise  = tf.assign(self.weights, fitted_weights)                                       
-        
-    def train(self, x_train):
-        
-        self.sess = tf.Session()
-        init      = tf.global_variables_initializer()
-        
-        self.sess.run(init)
-        
-        self.optimiser()
-        
-        for iteration in range(self.iters):
-            
-            for train in x_train:
-                
-                self.sess.run(self.optimise, feed_dict={self.x: train.reshape(-1,1),self.progress: iteration})
-
-        self.fitted_weights  = np.array(self.sess.run(self.weights))
-        
-        return self
-
-    def fit(self, x):
-        
-        fitted         = np.empty((x.shape[0],2))
-
-        node_distances = np.empty((x.shape[0], self.nodes.shape[0]))
-        
-        for j in range(x.shape[0]):
-            
-            distances_to_nodes = [np.linalg.norm(x[j,:] - self.fitted_weights[i]) for i in range(self.fitted_weights.shape[0])]
-            
-            node_distances[j]  = distances_to_nodes.copy()
-            
-            best_node          = self.nodes[np.argmin(distances_to_nodes)]
-            
-            fitted[j]          = best_node
-            
-        _, keep = np.unique(fitted, return_inverse = True, axis = 0)
-
-        self.assigned_clusters = keep.copy()
-        
-        return self
-    
 ###################################################################################################################################################################################### 
 
 class GPcluster:
@@ -203,10 +83,10 @@ class GPcluster:
             Initial value for the lengthscale (Default is 1)
         alpha: float
             Initial value for alpha (Default is 1)
-        gamma: float
-            Initial value for gamma (Default is 1)
+        gamma: float [0,1]
+            Controls the proportion of the maximum variance we want to determine cluster boundaries. (Default is 1)
         cov_lim: float
-            Limits the maxmum covariance (Default is 0.99)
+            Limits the maximum covariance (Default is 0.99)
         p_Num:
             Determines the number of samples to be generated when fitting (Default is 20)
         latent: int
@@ -523,12 +403,13 @@ class GPcluster:
         plt.scatter(points[:,0], points[:,1], c = self.assigned_cluster_equilibria+1)
         plt.subplot(2,2,3)
         plt.title('Clustered Data')
-        plt.scatter(X[:,0], X[:,1], c = self.final_clusters, alpha = 1)   
+        plt.scatter(X[:,0], X[:,1], c = self.assigned_clusters, alpha = 1)   
         plt.subplot(2,2,4)
         plt.title('Heatmap of variance function')
         plt.scatter(points[:,0], points[:,1], c = 'b')
         plt.imshow(variances.T,  extent=[xrange[0],xrange[1],yrange[0],yrange[1]], cmap = 'hot')
         plt.colorbar()
+        plt.savefig('gp_plots')
         plt.show()
         
     def plot_3d(self, red_dims = False):
@@ -560,7 +441,7 @@ class GPcluster:
         fig = plt.figure()
         ax  = plt.axes(projection='3d')
         plt.title('Clustered Data')
-        ax.scatter(X[:,0], X[:,1], X[:,2], c = self.final_clusters, alpha = 1)            
+        ax.scatter(X[:,0], X[:,1], X[:,2], c = self.assigned_clusters, alpha = 1)            
         plt.show
     
     def fit(self, plot = True):
@@ -701,7 +582,7 @@ class DPGMM(support):
                  gtol  = 1e-6,  
                  kap   = 1e-6, 
                  var_p = 1e-3, 
-                 conc  = 10,
+                 trunc = 10,
                  verb  = False):
         
         '''
@@ -715,17 +596,17 @@ class DPGMM(support):
         step: float
             Step size (Default is 1)
         alpha: float
-            Initial value for alpha (Default is 1)
+            Initial value for the Dirichlet hyper-parameter (Default is 1)
         ftol: float
             Tolerance for function value convergence (Default is 1e-6)
         gtol: float
             Tolerance for gradient value convergence (Default is 1e-6)
         kap: float
-            Initial value for kappa (Default is 1e-6)
+            Hyperparameter for prior mean (Default is 1e-6)
         var_p: float
-            Initial value for the variance (Default is 1e-3)
-        conc: float
-            Intiial value for the concentration parameter (Default is 10)
+            Prior value for the variance (Default is 1e-3)
+        trunc: float
+            Intiial value for the truncation parameter (Default is 10)
         verb: Bool
             Boolean indicator for explantory prints (Default is False)
         '''
@@ -751,11 +632,11 @@ class DPGMM(support):
         
         self.verbose       = verb
         
-        if conc > 0: self.concentration = conc 
+        if trunc > 0: self.truncation = trunc 
             
-        else: self.concentration = self.n_clusts + 1.
+        else: self.truncation = self.n_clusts + 1.
             
-        if self.concentration < self.n_clusts: print("Warning: Unstable behaviour when concentration parameter is less than the number of clusters")
+        if self.truncation < self.n_clusts: print("Warning: Unstable behaviour when truncation parameter is less than the number of clusters")
         
         ### Initialisation for the mixture model components
         
@@ -783,7 +664,7 @@ class DPGMM(support):
         self.params_cluster = self.params.sum(axis = 0)
 
         self.kaps     = self.params_cluster + self.kap_scalar
-        self.concs    = self.params_cluster + self.concentration
+        self.truncs    = self.params_cluster + self.truncation
         self.alphs    = self.params_cluster + self.alpha
         self.alph_nrm = self.alphs/self.alphs.sum()
         self.weighted = np.einsum('ac, ab -> cb', self.X, self.params)
@@ -805,9 +686,9 @@ class DPGMM(support):
         
         cluster      = -0.5*self.features*np.sum(np.log(self.kaps/self.kap_scalar))
         
-        dirichlet1   = self.n_clusts*self.concentration*self.ldet - np.sum(self.concs*self.clust_ldet)
+        dirichlet1   = self.n_clusts*self.truncation*self.ldet - np.sum(self.truncs*self.clust_ldet)
         
-        dirichlet2   = np.sum(self.lgamma(self.concs, self.n_clusts))- self.n_clusts*self.lgamma(self.concentration, self.n_clusts)
+        dirichlet2   = np.sum(self.lgamma(self.truncs, self.n_clusts))- self.n_clusts*self.lgamma(self.truncation, self.n_clusts)
         
         mixing_ELBO1 = gammaln((np.ones(self.n_clusts)*self.alpha).sum())-np.sum(gammaln((np.ones(self.n_clusts)*self.alpha)))
         
@@ -828,9 +709,9 @@ class DPGMM(support):
             var_grad  = self.clustvar_inv[None,:,:,:]*self.demeaned_kernel
             ldet_grad = np.dot(np.ones(self.features), np.dot(np.ones(self.features), var_grad))
 
-            grad_phi =  (-0.5*self.features/self.kaps + 0.5*digamma((self.concs-np.arange(self.features)[:,None])/2.).sum(0) + digamma(self.alpha + self.params.sum(axis = 0)) - self.clust_ldet -1.) + (self.gradient-0.5*ldet_grad*self.concs)
+            grad_phi =  (-0.5*self.features/self.kaps + 0.5*digamma((self.truncs-np.arange(self.features)[:,None])/2.).sum(0) + digamma(self.alpha + self.params.sum(axis = 0)) - self.clust_ldet -1.) + (self.gradient-0.5*ldet_grad*self.truncs)
 
-            direction = grad_phi - np.sum(self.params*grad_phi, 1)[:,None] # corrects for softmax (over) parameterisation
+            direction = grad_phi - np.sum(self.params*grad_phi, 1)[:,None]
             gradient  = (direction*self.params).flatten()
             
             current_phi = self.params0.flatten().copy()
@@ -877,10 +758,11 @@ class DPGMM(support):
         '''
 
         check1 = clust_num > (self.n_clusts-1) # in range
+        if check1: return False
         check2 = self.params_cluster[clust_num] < 1 # data to split
+        if check2: return False
         check3 = np.sum(self.params[:,clust_num] > threshold) < 2 #ensure there's something to split
-        
-        if check1 or check2 or check3: return False
+        if check3: return False
     
         previous_ELBO  = self.ELBO()
         self.n_clusts += 1
@@ -919,13 +801,13 @@ class DPGMM(support):
         
         diff  = X[:,:,None]-self.clustmean[None,:,:]
         ein1  = np.einsum('abd, bcd -> acd', diff, self.clustvar_inv)        
-        mhlb  = np.einsum('abc, abc -> ac', ein1, diff)/(self.kaps+1.)*self.kaps*(self.concs-self.features+1.)
-        ldet  = self.clust_ldet + 0.5*self.features*np.log((self.kaps+1.)/(self.kaps*(self.concs-self.features+1.)))
+        mhlb  = np.einsum('abc, abc -> ac', ein1, diff)/(self.kaps+1.)*self.kaps*(self.truncs-self.features+1.)
+        ldet  = self.clust_ldet + 0.5*self.features*np.log((self.kaps+1.)/(self.kaps*(self.truncs-self.features+1.)))
         
-        term1 = gammaln(0.5*(self.concs[None,:]+1.))
-        term2 = - gammaln(0.5*(self.concs[None,:]-self.features+1.))
-        term3 = - (0.5*self.features)*(np.log(self.concs[None,:]-self.features+1.) + np.log(np.pi))
-        term5 = - (0.5*(self.concs[None,:]+1.))*np.log(1.+mhlb/(self.concs[None,:]-self.features+1.))
+        term1 = gammaln(0.5*(self.truncs[None,:]+1.))
+        term2 = - gammaln(0.5*(self.truncs[None,:]-self.features+1.))
+        term3 = - (0.5*self.features)*(np.log(self.truncs[None,:]-self.features+1.) + np.log(np.pi))
+        term5 = - (0.5*(self.truncs[None,:]+1.))*np.log(1.+mhlb/(self.truncs[None,:]-self.features+1.))
                                                      
         lpred = term1 + term2 + term3 + term5 - ldet
 
@@ -938,7 +820,7 @@ class DPGMM(support):
         
         return mpred, pred
 
-    def plot(self, n = 100, thresh = 1e-8):
+    def plot(self, n = 100, thresh = 1e-8, name = None):
         
         '''
         Plot the clusters in a 2d space over the variance contours
@@ -975,6 +857,9 @@ class DPGMM(support):
             grid_contours[grid_contours < thresh] = np.nan
             plt.contourf(grid_x, grid_y,grid_contours.T, alpha = 0.3)
             plt.scatter(self.X[:,0], self.X[:,1], 5, self.assigned_clusters, cmap = cm.inferno, alpha = 1)
+            
+        if name is not None:
+            plt.savefig(name)
 
 
 

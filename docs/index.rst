@@ -1,14 +1,11 @@
-
-
 Welcome to mlportopt's documentation!
 =====================================
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
-   
-   autoapi.index
 
+   mlportopt
 
 Indices and tables
 ==================

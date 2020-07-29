@@ -46,7 +46,7 @@ class Optimise:
         frequency: str
             Frequency of data [Options: 'D', 'W', 'M'] (Default is 'W')
         residuals: ndarray
-            Beta-adjustmed returns (Regressed on the market). If not None, clustering is performed on these residuals. (Default is None)
+            Beta-adjusted returns (Regressed on the market). If not None, clustering is performed on these residuals. (Default is None)
         whiten: Bool
             Boolean indicator for demeaning and standardising (whitening) (Default is True)
         reduce_dims: int or None
@@ -59,11 +59,10 @@ class Optimise:
             Chosen dependence copula [Options: 'deheuvels', 'gaussian','student','clayton','gumbel'] (Default is None)    
         dep_denoise: str or None
             If not None, the Random Matrix Theoretical approach to denoising Hermitian matrices [Options 'fixed','shrinkage','targeted_shrinkage'] (Default is None)
-        flat_cluster: None or Nested Dictionary
+        flat_cluster: None or Nested Dictionary (see below for parameter descriptions)
             Parameter Dictionary for flat clustering of form {'Method':{Parameters}}
             [Options: {'DPGMM': {clusters, iters, step, alpha, ftol, gtol, kap, var_p, conc, verb}}
-                      {'SOM': {}}
-                      {'GP':  {}}]
+                      {'GP'   : {iters, step, s2, l, alpha, gamma, cov_lim, p_Num, latent, verbose}}]
         hier_cluster: Nested Dictionary
             Parameter Dictionary for hierarchical clustering of form {'Method':{Parameters}}
             [Options: {'Bayesian': {alpha, beta, gamma, rmt_denoise}}
@@ -78,6 +77,7 @@ class Optimise:
         
         Risk Options
         -------
+        - uniform
         - prob_sharpe
         - ann_sharpe
         - sharpe
@@ -91,7 +91,52 @@ class Optimise:
         - CVaR - student (CVaR under student t assumption)
         - CVaR - gmm     (CVaR from fitted GMM samples)
         
-        [ADD IN DPGMM AND GP parameter descriptions]
+        flatcluster - GP
+        ----------
+        iters: int
+            Number of iterations in the graident descent method (Default is 10)
+        step: float
+            Step size in gradient descent method (Default is 0.1)
+        s2: float
+            Initial value for the variance (Default is 1)
+        l: float
+            Initial value for the lengthscale (Default is 1)
+        alpha: float
+            Initial value for alpha (Default is 1)
+        gamma: float [0,1]
+            Controls the proportion of the maximum variance we want to determine cluster boundaries. (Default is 1)
+        cov_lim: float
+            Limits the maximum covariance (Default is 0.99)
+        p_Num:
+            Determines the number of samples to be generated when fitting (Default is 20)
+        latent: int
+            Determines the size of the latent space if dimensionality reduction is required (Default is 3)
+        verbose: Bool
+            Boolean indicator for descriptive printing (Default is False)
+        
+        flatcluster - DPGMM
+        ----------
+        X: ndarray
+        clusters: int
+            Initial number of clusters - updated by the DP prior
+        iters: int
+            Number of iterations in gradient descent (Default is 500)
+        step: float
+            Step size (Default is 1)
+        alpha: float
+            Initial value for the Dirichlet hyper-parameter (Default is 1)
+        ftol: float
+            Tolerance for function value convergence (Default is 1e-6)
+        gtol: float
+            Tolerance for gradient value convergence (Default is 1e-6)
+        kap: float
+            Hyperparameter for prior mean (Default is 1e-6)
+        var_p: float
+            Prior value for the variance (Default is 1e-3)
+        trunc: float
+            Intial value for the truncation parameter (Default is 10)
+        verb: Bool
+            Boolean indicator for explanatory prints (Default is False)
         
         '''
         
@@ -100,6 +145,8 @@ class Optimise:
         self.train, self.test = train_test(data, train_test_v)
 
         self.frequency        = frequency
+        
+        self.whiten           = whiten
         
         ######## Miscellaneous ###########
         
@@ -115,16 +162,17 @@ class Optimise:
         if residuals is not None: 
             
             self.residuals = True # Set the target data to the residuals if beta-adjustment is desired  
-            
-            self.X, _ = train_test(residuals, train_test_v)
+            self.X, _      = train_test(residuals, train_test_v)
         
         else:  self.X = self.train.copy()
             
         # Whiten and reduce
         
-        self.X       = preprocess(self.X, white = whiten, reduce = False, n = reduce_dims)
+        tform        = self.X.copy() + 1e-7
         
-        self.reduced = preprocess(self.X, white = False, reduce = (reduce_dims) > 0, n = reduce_dims)
+        self.X       = preprocess(tform, axis = 1, white = self.whiten , reduce = False, n = 0)
+
+        self.reduced = preprocess(tform, axis = 1, white = self.whiten , reduce = (reduce_dims > 0), n = reduce_dims)
 
         ########  Dependence  ############
         
@@ -160,23 +208,10 @@ class Optimise:
             gtol       = param_dict['gtol'] 
             kap        = param_dict['kap']
             var_p      = param_dict['var_p'] 
-            conc       = param_dict['conc']
+            trunc      = param_dict['trunc']
             verb       = False
             
-            self.fclust = DPGMM(self.reduced, clusters, iters, step, alpha, ftol, gtol, kap, var_p, conc, verb)
-        
-        elif self.flat_cluster == 'SOM':
-            
-            param_dict = flat_cluster['SOM']
-            
-            xdim       = param_dict['xdim']
-            ydim       = param_dict['ydim']
-            n_nodes    = param_dict['n_nodes']
-            lr         = param_dict['lr']
-            r          = param_dict['r']
-            iters      = param_dict['iterations']
-            
-            self.fclust = TFSOM(xdim, ydim, n_nodes, lr, r, iters)
+            self.fclust = DPGMM(self.reduced, clusters, iters, step, alpha, ftol, gtol, kap, var_p, trunc, verb)
             
         elif self.flat_cluster == 'GP':
             
@@ -235,10 +270,11 @@ class Optimise:
             if self.plots: self.fclust.plot()
             self.fclust.split_all()
             if self.plots: self.fclust.plot()
-
-        elif self.flat_cluster == 'SOM':
             
-            self.fclust.train(self.X).fit(self.X)
+
+#         elif self.flat_cluster == 'SOM':
+            
+#             self.fclust.train(self.X).fit(self.X)
 
         elif self.flat_cluster == 'GP':
             
@@ -254,18 +290,24 @@ class Optimise:
         
         if self.residuals:
 
-            _, self.X, self.merge_weights = merge_clusters(data     = self.train, 
-                                                           clusters = self.assigned_clusters,
-                                                           resids   = self.X, 
-                                                           method   = self.intra_method)
+            _, self.X, self.merge_weights = merge_clusters(data      = self.train, 
+                                                           clusters  = self.assigned_clusters,
+                                                           resids    = self.X,
+                                                           freq      = self.frequency,
+                                                           method    = self.intra_method)
+            
+            self.X = preprocess(self.X, axis = 1, white = self.whiten , reduce = False, n = 0)
             
         else:
 
-            self.X, _, self.merge_weights = merge_clusters(data     = self.X, 
-                                                           clusters = self.assigned_clusters, 
-                                                           resids   = None,
-                                                           method   = self.intra_method)
-
+            self.X, _, self.merge_weights = merge_clusters(data      = self.train, 
+                                                           clusters  = self.assigned_clusters, 
+                                                           resids    = None,
+                                                           freq      = self.frequency,
+                                                           method    = self.intra_method)
+            
+            self.X  = preprocess(self.X, axis = 1, white = self.whiten , reduce = False, n = 0)
+        
         return
 
     def h_cluster(self):
@@ -274,7 +316,7 @@ class Optimise:
 
         if self.hier_cluster == 'Bayesian': self.hclust.fit()
 
-        self.hclust.plot_dendrogram()
+        if self.plots: self.hclust.plot_dendrogram()
 
         self.linkage = np.array(self.hclust.linkage)
 
@@ -311,7 +353,6 @@ class Optimise:
         self.h_cluster()
         self.allocate()
         self.evaluate(self.plots)
-
         self.summary_df = self.evaluation.summary_df
 
         return

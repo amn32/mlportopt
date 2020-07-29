@@ -77,6 +77,7 @@ class GMM:
         self.bias        = bias
         self.n_params    = self.clusters*3 - 1
         self.verbose     = verbose
+        self.param_converge = {}
         
         ### Initialising the clusters ###
         
@@ -180,6 +181,12 @@ class GMM:
             self.calculate_expectation()
             self.optimise()
             
+            means      = [self.means[i][0] for i in range(self.clusters)]
+            variances  = [self.vars[i] for i in range(self.clusters)]
+            weights    = [self.pi[i] for i in range(self.clusters)]
+
+            self.param_converge[epoch] = [means, variances, weights]
+            
         if plot: sns.distplot(self.X, bins = 100, label = 'Original')
             
         return self
@@ -218,6 +225,7 @@ class GMM:
             sns.distplot(samples, bins = 100, label = 'Sampled')
             sns.distplot(self.X, bins = 100, label = 'Original')
             plt.legend()
+            plt.show()
         
         return samples
     

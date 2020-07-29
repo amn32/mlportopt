@@ -336,6 +336,131 @@ class DimAE:
     
 ################################################################################################################################################################################
     
+class TFSOM:
+    
+    '''
+    Tensorflow Self Organising Map
+    
+    Methods
+    -------
+    
+    optimiser()
+        Optimises the SOM
+    train(x)
+        Train the SOM
+    fit(x)
+        Project the data onto the SOM and return the region
+    '''
+    
+    def __init__(self, xdim, ydim, n_nodes, lr = 0.5, r = 0.5, iterations = 50):
+        
+        '''
+        Parameters
+        ----------
+        xdim: int
+            Number of horizontal nodes
+        ydim: int
+            Number of vertical nodes
+        n_nodes: int
+            Number of input features
+        lr: float, optional
+            Learning rate (default is 0.5)
+        r: float, optional
+            Initial map radius (default is 0.5)
+        iterations: int, optional
+            Number of iterations in training (default is 50)
+        '''
+        
+        if xdim is None: 
+            raise NotImplementedError('xdim not specified')
+        if ydim is None:
+            raise NotImplementedError('ydim not specified')
+        if n_nodes is None:
+            raise NotImplementedError('n_nodes not specified')
+        
+        tf.reset_default_graph() # Make sure we have no active sessions
+        self.xdim      = xdim
+        self.ydim      = ydim
+        self.lr        = lr
+        self.r         = r
+        self.n_nodes   = n_nodes
+        self.iters     = iterations
+        self.dtype     = 'float32'
+        self.size      = xdim*ydim
+        self.t_size    = tf.constant(self.size, 'int32')
+        self.progress  = tf.placeholder(self.dtype)
+        self.nodes     = np.array([[i,j] for i in range(xdim) for j in range(ydim)])
+        self.div       = tf.divide(self.progress, self.iters)
+        self.map       = tf.Graph()
+        self.euclid    = lambda p,q: tf.reduce_sum(tf.square(tf.subtract(p,q)), axis = 1) # Calculate Euclidean distance
+        self.weights   = tf.Variable(tf.random_normal([self.t_size, self.n_nodes]), dtype = self.dtype, name = 'weights')
+        self.x         = tf.placeholder(dtype = self.dtype, shape = (self.n_nodes, 1), name = 'data')
+        
+        self.big_x     = tf.transpose(tf.broadcast_to(self.x, (self.n_nodes, self.t_size)))
+        self.dist      = tf.sqrt(self.euclid(self.weights,self.big_x))
+        self.best      = tf.argmin(self.dist, axis = 0)
+        self.best_loc  = tf.reshape(tf.slice(self.nodes, tf.pad(tf.reshape(self.best, [1]), np.array([[0, 1]])), tf.cast(tf.constant(np.array([1, 2])), dtype=tf.int64)), [2])
+        self.dlr       = tf.multiply(self.lr, 1 - self.div)
+        self.radius    = tf.multiply(self.r,  1 - self.div)
+        
+    def optimiser(self):
+        
+        self.b_matrix  = tf.broadcast_to(self.best_loc, (self.size,2))
+        self.b_dist    = self.euclid(self.nodes, self.b_matrix)
+        self.surround  = tf.exp(tf.negative(tf.divide(tf.cast(self.b_dist, self.dtype), tf.cast(tf.square(self.radius), self.dtype))))
+        self.lr_matrix = tf.multiply(self.dlr, self.surround)    
+        self.factor    = tf.stack([tf.broadcast_to(tf.slice(self.lr_matrix, np.array([node]), np.array([1])), (self.n_nodes,)) for node in range(self.size)])        
+        self.factor   *= tf.subtract(tf.squeeze(tf.stack([self.x for i in range(self.size)]),2), self.weights)                              
+        fitted_weights = tf.add(self.weights, self.factor)
+        
+        self.optimise  = tf.assign(self.weights, fitted_weights)                                       
+        
+    def train(self, x_train):
+        
+        self.sess = tf.Session()
+        init      = tf.global_variables_initializer()
+        
+        self.sess.run(init)
+        
+        self.optimiser()
+        
+        for iteration in range(self.iters):
+            
+            for train in x_train:
+                
+                self.sess.run(self.optimise, feed_dict={self.x: train.reshape(-1,1),self.progress: iteration})
+
+        self.fitted_weights  = np.array(self.sess.run(self.weights))
+        
+        return self
+
+    def fit(self, x):
+        
+        fitted         = np.empty((x.shape[0],2))
+
+        node_distances = np.empty((x.shape[0], self.nodes.shape[0]))
+        
+        for j in range(x.shape[0]):
+            
+            distances_to_nodes = [np.linalg.norm(x[j,:] - self.fitted_weights[i]) for i in range(self.fitted_weights.shape[0])]
+            
+            node_distances[j]  = distances_to_nodes.copy()
+            
+            best_node          = self.nodes[np.argmin(distances_to_nodes)]
+            
+            fitted[j]          = best_node
+            
+        self.node_distances = node_distances
+            
+        _, keep = np.unique(fitted, return_inverse = True, axis = 0)
+
+        self.assigned_clusters = keep.copy()
+        
+        return self
+    
+    
+################################################################################################################################################################################
+    
 def PCA_(data, n, labels = 'r', visualise = False):
     
     '''
@@ -362,27 +487,28 @@ def PCA_(data, n, labels = 'r', visualise = False):
     
     return components
 
-def whiten(data):
+def whiten(data, axis = 0):
     
     '''
     Simple function to demean and standardise the data
     '''
     
-    return (data - data.mean(axis = 0))/data.std(axis = 0)
+    whitened_data = (data - data.mean(axis = axis)[:,None])/data.std(axis = axis)[:,None]
+    
+    return whitened_data
 
-def preprocess(data, white = True, reduce = True, n = 2, visualise = False):
+def preprocess(data, white = True, axis = 0, reduce = True, n = 2, visualise = False):
     
     '''
     Wrapper for whitening and dimensionality reduction
     '''
+    if white:
+        
+        data = whiten(data, axis)
     
     if reduce:
         
         data = PCA_(data, n, visualise = visualise)
-        
-    if white:
-        
-        data = whiten(data)
         
     return data
 
@@ -473,12 +599,12 @@ class RMT:
         '''
         
 
-        max_expected_eval = s2 * (1 + (1/q)**0.5)**2
-        min_expected_eval = s2 * (1 - (1/q)**0.5)**2
+        self.max_expected_eval = s2 * (1 + (1/q)**0.5)**2
+        self.min_expected_eval = s2 * (1 - (1/q)**0.5)**2
 
-        self.linspace = np.linspace(min_expected_eval, max_expected_eval, points)
+        self.linspace = np.linspace(self.min_expected_eval, self.max_expected_eval, points)
 
-        self.MP_pdf   = q * np.sqrt((max_expected_eval - self.linspace) * (self.linspace - min_expected_eval)) / (2 * np.pi * self.linspace * s2)
+        self.MP_pdf   = q * np.sqrt((self.max_expected_eval - self.linspace) * (self.linspace - self.min_expected_eval)) / (2 * np.pi * self.linspace * s2)
 
         return
     
@@ -641,11 +767,13 @@ class RMT:
         return np.linalg.cond(corr)
          
     def plot(self):
-        
-        plt.hist(self.evals, bins = 100, density = True, label = 'Empirical KDE distribution')
-        plt.plot(self.linspace, self.MP_pdf, label = 'Marcenko Pastur PDF')
+                
+        plt.hist(self.evals, bins = 100, density = True, alpha = 0.5, label = 'Empirical KDE distribution')
+        plt.plot(self.linspace, self.MP_pdf, c = 'r', label = 'Marcenko Pastur PDF')
+        plt.vlines(self.max_expected_eval, 0, 1.6, colors = 'goldenrod', linestyles='dashed', label = 'Max Expected Eigenvalue')
         plt.ylabel(r'Prob($\lambda$)')
         plt.xlabel(r'$\lambda$')
         plt.legend()
+#         plt.savefig('MP')
         plt.show()
         
