@@ -1,20 +1,16 @@
-mlportopt
+mlportopt package
 =================
 
 .. toctree::
    :maxdepth: 4
 
-   mlportopt.main
    mlportopt.preprocessing
    mlportopt.dependence
+   mlportopt.mixturemodels
    mlportopt.flatcluster
    mlportopt.hiercluster
-   mlportopt.mixturemodels
-   mlportopt.portfolio
    mlportopt.riskmetrics
+   mlportopt.portfolio
+   mlportopt.main
    mlportopt.util
 
-
-.. automodule:: mlportopt
-   :members:
-   :undoc-members:

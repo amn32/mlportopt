@@ -301,7 +301,7 @@ class GPcluster:
         
         Adj = np.eye(p)
         
-        for i in tqdm(p, leave = False):
+        for i in range(p):
             for j in range(p):
                 
                 if i < j:
@@ -664,7 +664,7 @@ class DPGMM(support):
         self.params_cluster = self.params.sum(axis = 0)
 
         self.kaps     = self.params_cluster + self.kap_scalar
-        self.truncs    = self.params_cluster + self.truncation
+        self.truncs   = self.params_cluster + self.truncation
         self.alphs    = self.params_cluster + self.alpha
         self.alph_nrm = self.alphs/self.alphs.sum()
         self.weighted = np.einsum('ac, ab -> cb', self.X, self.params)
@@ -700,7 +700,7 @@ class DPGMM(support):
         
         return cluster + dirichlet1 + dirichlet2 + mixing_ELBO1 - mixing_ELBO2 + entropy + likelihood1
 
-    def fit(self):
+    def fit_ELBO(self):
         
         current_ELBO = self.ELBO()
         
@@ -735,6 +735,10 @@ class DPGMM(support):
                 break
                 
             current_ELBO = ELBO 
+    
+    def fit(self):
+        
+        self.fit_ELBO()
             
         keep   = self.params_cluster > 1e-8
         new_K  = np.sum(keep)
@@ -744,7 +748,7 @@ class DPGMM(support):
         
         return self
             
-    def split_cluster(self, clust_num, threshold=0.9):
+    def split_cluster(self, clust_num, threshold=0.95):
         
         '''
         Compare splits and make the split if it leads to an improvment in the ELBO
@@ -841,6 +845,7 @@ class DPGMM(support):
             data_ = preprocess(self.X, white = False, reduce = True, n = 2)
             
             plt.scatter(data_[:,0], data_[:,1], c = self.assigned_clusters, s  = 10)
+            plt.show()
             
         else:
             
@@ -857,6 +862,7 @@ class DPGMM(support):
             grid_contours[grid_contours < thresh] = np.nan
             plt.contourf(grid_x, grid_y,grid_contours.T, alpha = 0.3)
             plt.scatter(self.X[:,0], self.X[:,1], 5, self.assigned_clusters, cmap = cm.inferno, alpha = 1)
+            plt.show()
             
         if name is not None:
             plt.savefig(name)

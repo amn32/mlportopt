@@ -8,6 +8,7 @@ from mlportopt.flatcluster.flatcluster     import DPGMM, TFSOM, GPcluster
 from mlportopt.hiercluster.hiercluster     import scipy_linkage, BHC
 from mlportopt.portfolio.portfolio         import Allocate, Evaluation, quasidiagonalise
 from mlportopt.dependence.dependence       import Dependence
+from mlportopt.riskmetrics.riskmetrics     import RiskMetrics
 
 class Optimise:
     
@@ -54,7 +55,7 @@ class Optimise:
         dep_measure: str
             Chosen dependence measure [Options: 'MI', 'VI','CE','CD','corr','Waserstein'] (Default is 'MI')
         dist_measure: str or None
-            If not None, the method for transforming a similarity matrix into a distance matrix [Options: 'angular', 'abs_angular', 'sq_angular'] (Default is None)
+            If not None, the method for transforming a similarity matrix into a distance matrix [Options: 'angular', 'corr_dist', 'acute_angular', 'abs_corr', 'other'] (Default is None)
         dep_copula: str
             Chosen dependence copula [Options: 'deheuvels', 'gaussian','student','clayton','gumbel'] (Default is None)    
         dep_denoise: str or None
@@ -154,6 +155,7 @@ class Optimise:
         self.merge_weights = None
         self.plots         = plots
         self.reduce_dims   = reduce_dims
+        self.linkage       = None
         
         self.hier_cluster_dict = hier_cluster
         
@@ -229,6 +231,14 @@ class Optimise:
             verbose = param_dict['verbose']
             
             self.fclust = GPcluster(self.reduced,iters, step, s2, l, alpha, gamma, cov_lim, p_Num, latent, verbose)
+            
+        if hier_cluster is not None:
+        
+            self.hier_cluster = list(hier_cluster.keys())[0]
+            
+        else:
+            
+            self.hier_cluster = hier_cluster
 
         return
     
@@ -267,14 +277,9 @@ class Optimise:
             
             self.fclust.fit()
 
-            if self.plots: self.fclust.plot()
-            self.fclust.split_all()
-            if self.plots: self.fclust.plot()
-            
-
-#         elif self.flat_cluster == 'SOM':
-            
-#             self.fclust.train(self.X).fit(self.X)
+#             if self.plots: self.fclust.plot()
+#             self.fclust.split_all()
+#             if self.plots: self.fclust.plot()
 
         elif self.flat_cluster == 'GP':
             
@@ -307,6 +312,10 @@ class Optimise:
                                                            method    = self.intra_method)
             
             self.X  = preprocess(self.X, axis = 1, white = self.whiten , reduce = False, n = 0)
+            
+        if self.merge_weights is None: 
+            
+            self.merge_weights = {i:[1] for i in range(self.train.shape[0])}
         
         return
 
@@ -326,14 +335,44 @@ class Optimise:
 
         self.allocation = Allocate(self.train, self.linkage, self.frequency)
 
-        self.weights    = self.allocation.recursively_partition(inter_cluster_metric = self.inter_method, 
-                                                                intra_cluster_metric = self.intra_method)
-
+        if self.hier_cluster is not None:
         
-        if self.merge_weights is not None:
+            self.weights    = self.allocation.recursively_partition(inter_cluster_metric = self.inter_method, 
+                                                                    intra_cluster_metric = self.intra_method)
+            
+            if self.merge_weights is not None:
 
-            self.weights = get_full_weights(self.weights, self.merge_weights)
+                self.weights = get_full_weights(self.weights, self.merge_weights)
+            
+        else:
 
+            inter = np.empty(self.train.shape[0])
+        
+            for i in range(inter.shape[0]):
+
+                inter_rm = RiskMetrics()
+                inter_rm.fit(self.train[i,:], freq = self.frequency)
+
+                inter[i] = inter_rm(self.inter_method)
+                
+            inter /=inter.sum()
+    
+            full_weights = []
+
+            ind = 0
+
+            for v, value in enumerate(self.merge_weights.values()):
+
+                for item in value:
+
+                    full_weights.append(v)
+
+                    ind +=1    
+            
+            self.weights  = np.array(full_weights * inter)
+            
+            self.weights /=self.weights.sum()
+    
         return
 
     def evaluate(self, plots = False):
@@ -350,7 +389,10 @@ class Optimise:
 
             self.f_cluster()
 
-        self.h_cluster()
+        if self.hier_cluster is not None:
+            
+            self.h_cluster()
+        
         self.allocate()
         self.evaluate(self.plots)
         self.summary_df = self.evaluation.summary_df

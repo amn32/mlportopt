@@ -21,14 +21,14 @@ class Distance:
     '''
     
     def __init__(self, similarity_matrix, dist_measure = 'angular'):
-        
+
         '''
         Parameters
         ----------
         similarity_matrix: ndarray
         dist_measure: str
             The desired function that maps similarity (-1,1) to distance (0,1) (Default is 'angular') 
-            [Options: 'angular', 'corr_dist', 'acute_angular', 'abs_corr']
+            [Options: 'angular', 'corr_dist', 'acute_angular', 'abs_corr', 'other' (Uses set metric for measure or if already distance, does not transform)]
         '''
         
         self.sim          = similarity_matrix
@@ -41,10 +41,13 @@ class Distance:
         self.acute_angular    = lambda sim: 0.5*np.pi - np.abs(0.5*np.pi - np.arccos(sim))
         self.abs_corr_dist    = lambda sim: np.sqrt(1-sim**2)
         
+        self.null_transform   = lambda sim: sim
+        
         self.valid_distances  = {'angular':self.angular_dist,
                                  'corr_dist':self.corr_dist,
                                  'acute_angular':self.acute_angular, 
-                                 'abs_corr':self.abs_corr_dist}
+                                 'abs_corr':self.abs_corr_dist,
+                                 'other': self.null_transform}
         
         return
     
@@ -164,13 +167,13 @@ class Dependence:
 
         MI   = mutual_info_score(None, None, contingency = np.histogram2d(x, y, bins)[0])
         
-        self.original_MI = MI
+        original_MI = MI
         
-        self.MI_dist     = 1-MI/max(entropy_x, entropy_y)
+        MI_dist     = 1-MI/max(entropy_x, entropy_y)
         
         MI /= min(entropy_x, entropy_y)
 
-        return MI
+        return [MI, MI_dist]
 
     def VIcoeff(self, x, y):
 
@@ -191,7 +194,7 @@ class Dependence:
 
         VI  /= entropy_x + entropy_y - MI
 
-        return VI
+        return [VI, VI]
     
     def CEcoeff(self, x, y):
     
@@ -219,13 +222,13 @@ class Dependence:
 
         CE  = sum(c*np.log(c)*bin_area)
         
-        self.original_CE = CE
+        original_CE = CE
         
-        self.CE_dist     = 1 - CE/max(entropy_x, entropy_y)
+        CE_dist     = 1 - CE/max(entropy_x, entropy_y)
 
         CE /= min(entropy_x, entropy_y)
 
-        return CE
+        return [CE, CE_dist]
     
     def CDcoeff(self, X, Y, copula = None):
         
@@ -265,7 +268,7 @@ class Dependence:
         
         if m1<1e-3: m1 = 0
 
-        return m1/(m1+m2)
+        return [m1/(m1+m2), m1/(m1+m2)]
     
     def get_copula(self, X, Y):
         
@@ -311,31 +314,20 @@ class Dependence:
         x = x.reshape(-1,1)
         y = y.reshape(-1,1)
         
-        gmm1 = GMM(x, clusters  = 3,      epochs      = 100, 
-                    initialisation  ='Fixed', bias        = 0.2, 
-                    constrained     = True,   constraints = [0.2, 0.6, 0.2])
+        gmm1 = GMM(x).fit()
         
-        gmm2 = GMM(y, clusters  = 3,      epochs      = 100, 
-                    initialisation  ='Fixed', bias        = 0.2, 
-                    constrained     = True,   constraints = [0.2, 0.6, 0.2])
-        
-        preds1  = gmm1.fit().predict(x)
-        preds2  = gmm2.fit().predict(y)
-        
+        gmm2 = GMM(y).fit()
+
         sample1 = gmm1.sample(1000, plot = False)
         sample2 = gmm2.sample(1000, plot = False)
         
         return sample1, sample2
     
-    def wasserstein_dist(self, sam1, sam2):
-        
-        return stats.wasserstein_distance(sam1, sam2)
-    
     def GMM_wass(self, x, y):
         
         sam1, sam2 = self.GMMsample(x,y)
         
-        return self.wasserstein_dist(sam1, sam2)
+        return [stats.wasserstein_distance(sam1, sam2), stats.wasserstein_distance(sam1, sam2)]
     
     def fit(self, metric = 'MI', copula = None, dist_measure = None, condensed = True):
         
@@ -343,7 +335,7 @@ class Dependence:
         Parameters
         ----------
         metric: str
-            Chosen metric [Options: 'MI', 'VI', 'CE', 'CD', 'corr', 'Waserstein'] (Default is 'MI')
+            Chosen metric [Options: 'MI', 'VI', 'CE', 'CD', 'corr', 'Wasserstein'] (Default is 'MI')
         copula: str
             Chosen copula [Options: 'deheuvels', 'gaussian','student','clayton','gumbel'] (Default is None)
         dist_measure: str
@@ -352,47 +344,51 @@ class Dependence:
             Boolean indicator to determine whether a condensed matrix is returned if dist_measure not None (Default is True)
         '''
         
+        n           = self.data.shape[0]
+        
+        ########### Vectorised version for correlation (Using Numpy) #########
+        
         if metric == 'corr': 
 
             sim = np.corrcoef(self.data)
             
-        if dist_measure is not None: 
-
-            if dist_measure == 'MI':
-
-                return self.MI_dist
-
-            elif dist_measure == 'CE':
-
-                return self.CE_dist
-
-            else:
-
-                return self.to_dist(sim, dist_measure, condensed)
-
-        else: 
-
-            return sim 
+        ########### For all the other similarity measures ####################    
         
-        self.copula = copula
-        n           = self.data.shape[0]
-        sim         = np.empty((n,n))
+        else:
         
-        if metric == 'MI':   func = self.MIcoeff
-        if metric == 'VI':   func = self.VIcoeff
-        if metric == 'CE':   func = self.CEcoeff
-        if metric == 'CD':   func = self.CDcoeff
-        if metric == 'Wasserstein': func = self.GMM_wass
+            self.copula = copula
+            sim         = np.empty((n,n))
+            distance_c  = np.empty((n,n))
+
+            if metric == 'MI':          func = self.MIcoeff
+            if metric == 'VI':          func = self.VIcoeff
+            if metric == 'CE':          func = self.CEcoeff
+            if metric == 'CD':          func = self.CDcoeff
+            if metric == 'Wasserstein': func = self.GMM_wass
         
 
-        for i in range(n):
-            for j in range(n):
-                
-                print(f'Estimating dependence measure for asset {i} and asset {j} out of {n} x {n}\r', end="")
-                
-                if i == j:  sim[i,j] = 1
-                elif j>i:   sim[i,j] = func(self.data[i,:],self.data[j,:])   
-                else:       sim[i,j] = sim[j,i]
+            for i in range(n):
+                for j in range(n):
+
+                    print(f'Estimating dependence measure for asset {i} and asset {j} out of {n} x {n}\r', end="")
+
+                    if i == j:  
+                        
+                        sim[i,j]        = 1
+                        distance_c[i,j] = 0
+                        
+                    elif j>i:   
+                        
+                        sim_list         = func(self.data[i,:],self.data[j,:])
+                        sim[i,j]         = sim_list[0]   
+                        distance_c[i,j]  = sim_list[1] 
+                    
+                    else:       
+                        
+                        sim[i,j]         = sim[j,i]
+                        distance_c[i,j]  = distance_c[j,i]
+                    
+        ############# Denosiing methods of the constructed similarity matrix ############
                     
         if self.rmt_denoise is not None and metric in self.sim_measures:
             
@@ -404,18 +400,22 @@ class Dependence:
                 for j in range(n):
                 
                     if i == j: sim[i,j] = 1
-
-        if metric in self.distances:
-                        
-            return self.to_dist(sim, condensed, tform = False)
-                        
-        elif dist_measure is not None: 
-            
-            return self.to_dist(sim, dist_measure, condensed)
+ 
+        ############# Transforming (if not already) to a distance metric ################
         
-        else: 
+        if dist_measure is not None: 
             
-            return sim   
+            if dist_measure == 'other':
+
+                return self.to_dist(distance_c, dist_measure, condensed, True)
+            
+            else:
+
+                return self.to_dist(sim, dist_measure, condensed, True)
+
+        else: 
+
+            return sim 
         
     def to_dist(self, similarity_matrix, dist_measure, condensed = True, tform = True):
         

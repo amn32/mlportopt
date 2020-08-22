@@ -1,4 +1,4 @@
-Welcome to mlportopt's documentation!
+Documentation for mlportopt
 =====================================
 
 .. toctree::
@@ -6,10 +6,3 @@ Welcome to mlportopt's documentation!
    :caption: Contents:
 
    mlportopt
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`

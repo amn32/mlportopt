@@ -65,22 +65,14 @@ class RiskMetrics:
             
         if self.mm == 'Gauss':
             
-            self.gmm_samples = GMM(self.data.reshape(-1,1), epochs = 50, 
-                                   initialisation='Fixed', 
-                                   bias= 0.1, 
-                                   constrained=True, 
-                                   constraints = [0.2, 0.6,0.3]).fit().sample(100000, False)
-            
-        elif self.mm == 'Gamma':
-            
-            self.gmm_samples = GMM(self.data).fit().sample(100000, False) #Replace this with Gamma Mixture model
+            self.gmm_samples = GMM(self.data.reshape(-1,1)).fit().sample(100000, False)
              
         self.sharpe()
         self.prob_sharpe()
         self.ann_vol()
         self.VaR()
         self.CVaR()
-        
+
         if self.n < 30: print('Need more observations for CLT assumptions to be valid')
         
         return self

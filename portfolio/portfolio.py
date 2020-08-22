@@ -71,7 +71,9 @@ class Allocate:
         
         self.ann_returns  = self.data.mean(1) * self.freq
         
-        self.sorted_index = quasidiagonalise(self.link)
+        if self.link is not None:
+        
+            self.sorted_index = quasidiagonalise(self.link)
         
     def cluster_risk_metric(self, inter_cluster_metric, intra_cluster_metric, index):
         
@@ -349,7 +351,7 @@ class Evaluation:
 
     def summary(self, verbose = True):
 
-        columns = ['HRP - PSharpe','Ann. Ret', 'Ann. Vol', 'Sharpe', 'Prob. Sharpe', 'VaR', 'CVaR']
+        columns = ['HRP - PSharpe', 'MK - PSharpe','IVP - PSharpe', 'Ann. Ret', 'Ann. Vol', 'Sharpe', 'Prob. Sharpe', 'VaR', 'CVaR']
         
         rows    = list(self.all_data.keys())
         
@@ -369,9 +371,17 @@ class Evaluation:
 
             rm             = RiskMetrics()
             rm.fit(v, freq = self.frequency, bmark = self.all_data['HRP'])
-            adj_psharpe    = rm('prob_sharpe')
+            adj_psharpe1   = rm('prob_sharpe')
             
-            data_[i,:] = [adj_psharpe, mean, vol, sharpe, p_sharpe, norm_var, norm_cvar]
+            rm             = RiskMetrics()
+            rm.fit(v, freq = self.frequency, bmark = self.all_data['MK'])
+            adj_psharpe2   = rm('prob_sharpe')
+            
+            rm             = RiskMetrics()
+            rm.fit(v, freq = self.frequency, bmark = self.all_data['IVP'])
+            adj_psharpe3   = rm('prob_sharpe')
+            
+            data_[i,:] = [adj_psharpe1, adj_psharpe2, adj_psharpe3, mean, vol, sharpe, p_sharpe, norm_var, norm_cvar]
                         
         self.summary_df = pd.DataFrame(data_, index = rows, columns = columns)
         

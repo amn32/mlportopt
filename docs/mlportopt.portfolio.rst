@@ -1,12 +1,12 @@
-Portfolio Allocation and Evaluation
+Portfolio Allocation
 ===========================
+
 
 .. automodule:: mlportopt.portfolio.portfolio
    :members:
    :undoc-members:
-   :show-inheritance:
+
 
 .. automodule:: mlportopt.portfolio
    :members:
    :undoc-members:
-   :show-inheritance:
