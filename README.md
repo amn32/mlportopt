@@ -56,16 +56,6 @@ Using machine learning clustering techniques and non-correlation based dependenc
 
 Any other variant is possible using the above risk metrics and investing inversely proportionately. User can specify both intra and inter cluster allocation methods.
 
-## Installation
-
-PENDING
-
-Use the package manager [pip](https://pip.pypa.io/en/stable/) to install mlportopt.
-
-```bash
-pip install mlportopt
-```
-
 ## Usage
 
 ```python
