@@ -1,7 +1,3 @@
-'''
-mlportopt docstring
-'''
-
 import mlportopt.util as util
 import mlportopt.flatcluster as flatcluster
 import mlportopt.hiercluster as hiercluster
