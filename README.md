@@ -4,15 +4,6 @@ mlportopt is a Python library for portfolio optimisation.
 
 Using machine learning clustering techniques and non-correlation based dependence measures, the aim is to achieve better out of sample risk adjusted returns than naive risk parity and Markowitz based portfolio optimisation techniques.
 
-## Usage
-
-All relevant code may be imported as follows. For full documentation please refer to the Appendix of the dissertation.
-
-```python
-from mlportopt.main import *
-from mlportopt.util import *
-```
-
 ## Clustering
 
 ### Divisive
@@ -65,6 +56,16 @@ from mlportopt.util import *
 
 Any other variant is possible using the above risk metrics and investing inversely proportionately. User can specify both intra and inter cluster allocation methods.
 
+## Usage
+
+```python
+from mlportop import Optimise
+```
+
+## Contributing
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+Please make sure to update tests as appropriate.
 
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)
